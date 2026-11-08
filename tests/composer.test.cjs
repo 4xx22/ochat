@@ -304,7 +304,7 @@ test('profile photos appear beside peers and are cleared from the interface on l
 
 test('voice disconnect is next to the voice room and stays out of the message composer',async t=>{
   const a=await setup(t);a.session({...connected,room:{...connected.room,capacity:0},voice:true});
-  assert.ok(a.get('voice-label').parentElement.contains(a.get('stop-voice')));assert.equal(a.get('composer').contains(a.get('stop-voice')),false);assert.equal(a.get('stop-voice').hidden,false);assert.equal(a.get('voice-button').hidden,true);
+  assert.ok(a.get('voice-label').closest('.dock-heading').contains(a.get('stop-voice')));assert.equal(a.get('composer').contains(a.get('stop-voice')),false);assert.equal(a.get('stop-voice').hidden,false);assert.equal(a.get('voice-button').hidden,true);
   a.get('stop-voice').click();await flush();assert.ok(a.calls.some(([c])=>c==='stop_voice'));
 });
 
@@ -1311,6 +1311,14 @@ test('group details summarize the room and show role, activity and connection on
  assert.equal(byName('Poor').querySelector('.member-signal').dataset.quality,'poor');assert.match(byName('Poor').querySelector('.member-profile').getAttribute('aria-description'),/Poor connection, 563 milliseconds/);
  assert.equal(byName('Test').querySelector('.member-signal').dataset.quality,'good');assert.equal(byName('Test').querySelector('.voice-peer-ping').hidden,true);
  assert.deepEqual([...a.get('members').querySelectorAll('.member-group-title')].map(n=>n.textContent),[]);
+});
+test('voice card shows state, room and icon controls, and marks the joined channel',async t=>{
+ const a=await setup(t);a.session({...channelRoom,voice:true,voice_channel:'voice-general',voice_started_at:Date.now()-5000});await flush();
+ assert.equal(a.get('voice-bar').hidden,false);assert.equal(a.get('voice-state').textContent,'Voice connected');assert.equal(a.get('voice-label').textContent,'Studio → General');
+ assert.equal(a.get('stop-voice').textContent,'Leave');assert.equal(a.get('voice-bar').querySelector('.dock-heading').contains(a.get('voice-diagnostics-button')),true);
+ const joined=a.window.document.querySelectorAll('.channel-select.voice-connected');assert.equal(joined.length,1);assert.equal(joined[0].querySelector('.channel-name').textContent,'General');
+ a.session({...connected,voice:true,call:{id:'call',peer:'peer',status:'outgoing'}});await flush();assert.equal(a.get('voice-state').textContent,'Connecting…');
+ await a.app.lockAccount();assert.equal(a.get('voice-state').textContent,'Voice connected');assert.equal(a.get('voice-label').textContent,'');
 });
 test('account button shows availability and opens the status menu',async t=>{
  const a=await setup(t);a.session(connected);await flush();

@@ -10,7 +10,7 @@ The accepted preview is integrated into the actual Tauri frontend. This is a pre
 | Rail home | Friends and direct messages. The navigation also keeps received and sent requests, Add friend and Copy my contact ID. |
 | Rail + / arrow | Existing Create room and Join invitation flows. |
 | Navigation | Joined rooms/private chats, invitation-only direct chat creation, privacy information and the current room's chat, files, invitation, emoji and voice shortcuts. |
-| Navigation footer | Active voice room, adjacent Leave/Hang up, elapsed time, participant names/photos, speaking indication, Mute, push-to-talk and Audio diagnostics. The account block below it is one button (photo, name, availability) that opens the status menu and Copy my contact ID, followed by Lock and Settings. |
+| Navigation footer | Active voice card with connection state, elapsed time, room and channel, Leave/Hang up, Mute and Deafen with device menus, Camera, Share screen and push-to-talk. The signal bars open Call quality. The account block below it is one button (photo, name, availability) that opens the status menu and Copy my contact ID, followed by Lock and Settings. |
 | Conversation header | Recipient/room identity and presence, Call/Join voice, Search, Members/Profile and the conversation actions menu. |
 | Right panel | Group header (image, member count, connection pill), member rows with role, activity and signal strength, and the shared emoji library card. Profiles open in the same panel. |
 | Message hover/focus | Reply, React and More, including author edits/deletion, pinning and related tools. Touch layouts expose the actions without hover. |
