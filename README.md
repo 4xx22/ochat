@@ -77,7 +77,7 @@ Encrypted peer-to-peer conversations, voice calls and shared spaces for desktop.
 Install Git, stable Rust, Node.js **24.22.1** (see `.node-version`) and the [platform prerequisites](docs/DEVELOPMENT.md#platform-prerequisites). Run these commands from a terminal on the platform you want to build for.
 
 ```sh
-git clone https://github.com/Artist6689/ochat.git
+git clone https://github.com/Apple-Lollipop/ochat.git
 cd ochat
 npm ci
 ```
