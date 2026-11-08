@@ -17,12 +17,6 @@
 .discord-shell #members .member-profile{font-size:16px;min-height:58px}
 .discord-shell #members .avatar{width:44px;height:44px;min-width:44px;font-size:16px}
 .discord-shell #members .member-name{font-size:16px}
-.discord-shell #details-dialog.profile-overlay{position:fixed;inset:0;margin:auto;width:min(480px,calc(100vw - 24px));height:auto;max-height:calc(100dvh - 32px);border:1px solid var(--hairline);border-radius:18px;padding:24px;box-shadow:0 24px 80px #0006;overflow:auto;z-index:100}
-.profile-overlay #details-overview,.profile-overlay #participants-section,.profile-overlay #profile-back{display:none!important}
-.profile-overlay #peer-card{display:flex;flex-direction:column;gap:12px}
-.profile-overlay #peer-avatar{width:100px;height:100px;font-size:30px;cursor:zoom-in;align-self:center}
-.profile-overlay #peer-name{font-size:24px;text-align:center}
-.profile-overlay #peer-avatar .profile-photo{border-radius:inherit}
 #profile-photo-dialog{width:min(840px,calc(100vw - 24px));max-height:calc(100dvh - 24px);padding:16px}
 #photo-viewer-image{display:block;max-width:100%;max-height:calc(100dvh - 130px);object-fit:contain;margin:auto}
 .inline-image img{display:block;max-width:min(480px,100%);max-height:400px;width:auto;height:auto;border-radius:10px;object-fit:contain;cursor:zoom-in}
@@ -42,15 +36,10 @@ body.discord-shell>main{background:var(--canvas-gradient,color-mix(in srgb,var(-
 :root{--window-opacity:1!important}}@media(prefers-contrast:more){
 :root{--window-opacity:1!important}}@media(max-width:780px){
 .inline-image img{max-height:280px}
-.discord-shell #details-dialog.profile-overlay{padding:18px}}
+}
 #photo-viewer-image{width:min(640px,100%);height:auto}
 .privacy-settings{margin-top:0}
 .personalization-fields input[type=range]{max-width:100%}
-.discord-shell #details-dialog.profile-overlay{max-width:min(480px,calc(100vw - 24px));min-width:0;flex:none;height:fit-content}
-.discord-shell #details-dialog.profile-overlay #peer-avatar{width:100px;height:100px;min-width:100px;font-size:30px;margin:0 auto 4px}
-.discord-shell #details-dialog.profile-overlay #peer-card{gap:12px}
-.discord-shell #details-dialog.profile-overlay #peer-bio{font-size:15px;line-height:1.6;margin:0}
-.discord-shell #details-dialog.profile-overlay .secondary{font-size:13px;min-height:36px}
 .discord-shell #details-dialog #members .avatar{width:44px;height:44px;min-width:44px;font-size:16px}
 .discord-shell #details-dialog #members .member-profile{font-size:16px;min-height:58px}
 .discord-shell #details-dialog #members .member-name{font-size:16px}
@@ -85,7 +74,6 @@ body.discord-shell>main,.discord-shell .workspace{background:transparent}
 .discord-shell #sidebar-footer,.discord-shell #account-controls{background:transparent;color:var(--custom-panel-text,var(--text))}
 .discord-shell dialog:not(#navigation-dialog),
 .discord-shell #details-dialog,
-.discord-shell #details-dialog.profile-overlay{background:var(--custom-panel,var(--panel));opacity:1;backdrop-filter:none;color:var(--custom-panel-text,var(--text))}
 .discord-shell dialog::backdrop{background:#0006;backdrop-filter:blur(4px)}
 .discord-shell .message .bubble,.discord-shell .message.own .bubble,.discord-shell .message.unread .bubble{font-size:var(--chat-font-size,15px)}
 .discord-shell .message,.discord-shell .message.own{margin-top:var(--chat-spacing,8px);margin-bottom:var(--chat-spacing,8px)}

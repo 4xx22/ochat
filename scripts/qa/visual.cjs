@@ -55,7 +55,7 @@ if(require.main===module)(async()=>{
     await page.screenshot({path:path.join(output,`${theme}-${width}-custom-appearance.png`)});
    }
    await page.locator('#settings-cancel').click();assert.equal(await page.evaluate(()=>document.documentElement.style.getPropertyValue('--custom-panel')),'');await page.locator('#gif-button').click();await page.locator('.meme-loading').waitFor();await page.screenshot({path:path.join(output,`${theme}-${width}-risibank.png`)});await page.locator('[data-meme-mode="favorites"]').click();await page.screenshot({path:path.join(output,`${theme}-${width}-meme-favorites.png`)});await page.keyboard.press('Escape');
-   await page.evaluate(()=>showPeer('b'.repeat(64),'Maya'));await page.locator('#details-dialog.profile-overlay').waitFor({state:'visible'});await page.screenshot({path:path.join(output,`${theme}-${width}-profile.png`)});await page.keyboard.press('Escape');
+   await page.evaluate(()=>showPeer('b'.repeat(64),'Maya'));await page.locator('#floating-profile').waitFor({state:'visible'});await page.screenshot({path:path.join(output,`${theme}-${width}-profile.png`)});await page.keyboard.press('Escape');
    if(width<900)await page.locator('#navigation-toggle').click();await page.locator('#rail-home').click();await page.locator('#home-content').waitFor({state:'visible'});await page.screenshot({path:path.join(output,`${theme}-${width}-home.png`)});
    assert.deepEqual(errors,[]);report.push({theme,width,height,states:['chat','channels','voice','appearance','audio','notifications','account','privacy','risibank','meme-favorites','profile','home'],horizontalOverflow:false,settingsActionsVisible:true,pageErrors:errors});await page.close();
   }

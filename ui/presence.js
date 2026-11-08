@@ -66,7 +66,7 @@
       else {audioBadge(row,person);voiceActivity(row,person);}
     }
     const card=document.getElementById('peer-card'),avatar=document.getElementById('peer-avatar');
-    if(card){let line=document.getElementById('peer-room-role');if(!line){line=document.createElement('p');line.id='peer-room-role';document.getElementById('peer-name').after(line);}
+    if(card){let line=document.getElementById('peer-room-role');if(!line){line=document.createElement('p');line.id='peer-room-role';document.querySelector('.peer-headline').after(line);}
       const room=inspectedPeer?.room||selectedRoom,person=avatar.dataset.avatarPeer?member(avatar.dataset.avatarPeer,room):null;
       paintAvatar(avatar,card.hidden?null:person,room);roleBadge(line,card.hidden?null:person,room);line.hidden=!line.firstElementChild;
     }

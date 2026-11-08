@@ -140,41 +140,48 @@ function renderIdentity(room) {
   $('room-actions-name').textContent=room?context.title:'';
 }
 function clearPeerCard() {
-  $('peer-card').hidden=true;$('profile-back').hidden=true;
-  for(const key of ['avatarHash','avatarName','avatarPeer'])delete $('peer-avatar').dataset[key];
+  $('peer-card').hidden=true;$('peer-verification').hidden=true;verificationTarget=null;
+  for(const key of ['avatarHash','avatarName','avatarPeer','tone'])delete $('peer-avatar').dataset[key];
   delete $('peer-voice').dataset.speaking;
   for(const id of ['peer-avatar','peer-name','peer-presence','peer-connection','peer-voice','peer-relationship','peer-identity'])$(id).textContent='';
   for(const id of ['peer-message','peer-add','peer-copy'])$(id).onclick=null;
+}
+function renderPeerVerification(person,self) {
+  const data=verificationCache.get(person.id),ready=!self&&!!data?.fingerprint;
+  $('peer-verification').hidden=!ready;if(!ready){verificationTarget=null;return;}
+  if(verificationTarget?.peer!==data.peer)fingerprintOpen=!data.verified;
+  verificationTarget=data;$('peer-verification').dataset.state=data.verified?'verified':data.same_name_verified?'conflict':'unverified';
+  $('peer-verification-status').textContent=data.verified?'Identity verified':data.same_name_verified?'Different identity with a familiar name':'Identity not verified';
+  $('verification-hint').textContent=data.verified?`You confirmed this fingerprint with ${person.name} on this device.`:data.same_name_verified?`A different verified identity uses the name ${person.name}. Compare this fingerprint separately before trusting it.`:`Read this fingerprint out loud with ${person.name}, in person or over a call. If every group matches, you're talking to the right person.`;
+  const code=$('verification-fingerprint'),groups=data.fingerprint.split(/\s+/);
+  if(code.textContent!==groups.join(' ')){code.replaceChildren();groups.forEach((group,index)=>{if(index)code.append(' ');code.append(el('span','',group));});}
+  code.hidden=!fingerprintOpen;$('copy-fingerprint').hidden=!fingerprintOpen;$('confirm-verification').hidden=data.verified||!fingerprintOpen;$('remove-verification').hidden=!data.verified;
+  $('toggle-fingerprint').textContent=fingerprintOpen?'Hide fingerprint':'Show fingerprint';
 }
 function renderPeerCard() {
   if(!unlocked || !state)return;
   if(inspectedRoom!==selectedRoom){window.OchatProfiles?.close(false);inspectedPeer=null;inspectedRoom=selectedRoom;}
   const context=conversationContext(selectedRoom),target=inspectedPeer || context.peer;
   const person=target ? peerDetails(target.id,target.room || selectedRoom,target.name) : null;
-  const floating=!!inspectedPeer?.floating;const focusedMember=!floating && !!inspectedPeer && (!context.direct || context.peer?.id!==person?.id);
-  $('details-title').textContent=person&&!floating?'Profile':context.direct?'Private chat':'Group details';
-  $('profile-back').hidden=!focusedMember || !context.room;
-  $('profile-back').textContent=context.direct?'← Back to chat profile':'← Back to members';
-  $('details-overview').hidden=focusedMember;
+  $('details-title').textContent=person&&!inspectedPeer?'Profile':context.direct?'Private chat':'Group details';
   $('participants-section').hidden=!!context.direct && !!context.peer;
   $('peer-card').hidden=!person;
   if(!person){clearPeerCard();return;}
   const self=person.id===state.id,friend=friends.find(friend=>friend.peer===person.id);
-  profileAvatar($('peer-avatar'),person.name,person.avatar_hash,person.id);
+  profileAvatar($('peer-avatar'),person.name,person.avatar_hash,person.id);$('peer-avatar').dataset.tone=friendTone(person.id);
   $('peer-name').textContent=person.name;window.OchatPersonalization?.profile(person);window.OchatCommunity?.badge($('peer-name'),person);
   $('peer-presence').textContent=person.online?({away:'Away',busy:'Do not disturb'})[person.availability]||'Online':'Offline';
   $('peer-presence').classList.toggle('online',person.online);
   const route=self?'self':!person.online?'offline':person.route==='direct'?'direct':person.route==='relay'?'relay':'unknown';
   const connection=$('peer-connection');connection.dataset.route=route;connection.textContent=route==='self'?'This device':route==='offline'?'Disconnected':route==='direct'?'Direct':route==='relay'?'Relayed':'Connected · route unavailable';
-  if(!self && person.online && Number.isFinite(person.latency_ms) && person.latency_ms>0)connection.textContent+=' · '+Math.round(person.latency_ms)+' ms';
+  if(!self && person.online && Number.isFinite(person.latency_ms) && person.latency_ms>0)connection.append(el('span','peer-latency',' · '+Math.round(person.latency_ms)+' ms'));
   connection.title=route==='relay'&&settings?.tor_enabled?'Encrypted connection through Tor on this device and an Iroh relay':person.online&&!self?'Current encrypted connection from this device to this peer':route==='offline'?'No active connection to this peer':'This is your local account';
   $('peer-voice').textContent=person.voice&&person.deafened?'Deafened':person.voice&&person.muted?'Microphone muted':person.speaking?'Speaking now':person.voice?'In a voice chat':'Not in voice';
   $('peer-voice').dataset.speaking=String(person.speaking); window.OchatFeatures?.profile(person);
-  $('peer-relationship').textContent=self?'You':friend?.status==='accepted'?'Friend':friend?.status==='incoming'?'Sent you a friend request':friend?.status==='outgoing'?'Your request is pending':'Not in your friends';
+  $('peer-relationship').dataset.kind=self?'self':friend?.status||'none';$('peer-relationship').textContent=self?'You':friend?.status==='accepted'?'Friend':friend?.status==='incoming'?'Sent you a friend request':friend?.status==='outgoing'?'Your request is pending':'Not in your friends';
   $('peer-identity').textContent=person.id;
-  $('verify-peer-button').hidden=self;
-  const verified=verificationCache.get(person.id);$('peer-verification-status').textContent=self?'This is your identity':verified?.verified?'Verified identity':'Identity not verified';
-  if(!self && !verificationCache.has(person.id)){verificationCache.set(person.id,{loading:true});const generation=sessionGeneration;invoke('peer_verification',{peer:person.id}).then(data=>{if(unlocked && generation===sessionGeneration){verificationCache.set(person.id,data);if($('peer-identity').textContent===person.id)$('peer-verification-status').textContent=data?.verified?'Verified identity':data?.same_name_verified?'Different identity with a familiar name — compare again.':'Identity not verified';}}).catch(()=>verificationCache.delete(person.id));}
+  renderPeerVerification(person,self);
+  const cachedVerification=verificationCache.get(person.id);if(!self && !cachedVerification?.fingerprint && !cachedVerification?.loading){verificationCache.set(person.id,{loading:true});const generation=sessionGeneration;invoke('peer_verification',{peer:person.id}).then(data=>{if(unlocked && generation===sessionGeneration){verificationCache.set(person.id,data);if($('peer-identity').textContent===person.id)renderPeerVerification(person,false);}}).catch(()=>verificationCache.delete(person.id));}
 
   $('peer-copy').onclick=()=>action($('peer-copy'),async()=>{await invoke('copy_text',{text:person.id});toast('Public identity copied.');});
   const message=$('peer-message'),add=$('peer-add');
@@ -189,15 +196,8 @@ function renderPeerCard() {
 }
 function showPeer(id,name,room=selectedRoom,opener=document.activeElement) {
   if(!unlocked)return;
-  const floating=!!conversationContext(room).room && !conversationContext(room).direct;
-  if(!floating)window.OchatProfiles?.close(false);
-  inspectedPeer={id,name,room,floating};inspectedRoom=selectedRoom;
-  if(floating){releaseTalk();renderPeerCard();window.OchatProfiles?.open(opener);return;}
-  restoreDetailsOnWide=false;const origin=document.activeElement,returnFocus=$('navigation-dialog').contains(origin) && navigationModal?(panelOpeners.get('navigation-dialog') || $('navigation-toggle')):origin,dialog=$('details-dialog');renderPeerCard();
-  releaseTalk();prepareDialog(dialog.id);panelOpeners.set(dialog.id,returnFocus);
-  detailsModal=true;dialog.classList.add('profile-overlay');
-  if(dialog.open)dialog.close();dialog.showModal();
-  $('details-toggle').setAttribute('aria-expanded','true');dialog.scrollTop=0;
+  verificationTarget=null;inspectedPeer={id,name,room};inspectedRoom=selectedRoom;
+  releaseTalk();renderPeerCard();window.OchatProfiles?.open(opener);
 }
 async function refreshFriends() {
   const generation=++friendGeneration,session=sessionGeneration,result=await invoke('list_friends');
@@ -243,7 +243,7 @@ function renderFriends() {
     const group=label=>{const node=el('div','friend-group');node.dataset.label=label;node.append(el('h3','friend-group-title'));return node;},onlineGroup=group('Online'),offlineGroup=group('Offline');
     for(const friend of entries){
       const person=peerDetails(friend.peer,friend.direct_room,friend.name),online=person.online&&person.availability!=='invisible',row=el('div','friend-row'),profile=el('button','friend-heading'),avatar=el('span','avatar'),dot=el('span',`presence-dot ${online?'online':'offline'}`),details=el('span','friend-details'),name=el('span','friend-name');
-      row.dataset.peer=friend.peer;row.dataset.online=String(online);if(friend.direct_room)row.dataset.room=friend.direct_room;row.dataset.search=(person.name+' '+friend.peer).toLocaleLowerCase();profile.type='button';profile.title='View profile';profile.onclick=()=>showPeer(friend.peer,person.name,friend.direct_room);profileAvatar(avatar,person.name,person.avatar_hash,person.id);avatar.dataset.tone=friendTone(friend.peer);avatar.setAttribute('aria-hidden','true');dot.setAttribute('role','img');dot.setAttribute('aria-label',online?'Online':'Offline');avatar.append(dot);name.append(el('strong','',person.name));window.OchatCommunity?.badge(name,person);details.append(name);profile.append(avatar,details);row.append(profile);
+      row.dataset.peer=friend.peer;row.dataset.online=String(online);if(friend.direct_room)row.dataset.room=friend.direct_room;row.dataset.search=(person.name+' '+friend.peer).toLocaleLowerCase();profile.type='button';profile.title='View profile';profile.onclick=()=>showPeer(friend.peer,person.name,friend.direct_room,profile);profileAvatar(avatar,person.name,person.avatar_hash,person.id);avatar.dataset.tone=friendTone(friend.peer);avatar.setAttribute('aria-hidden','true');dot.setAttribute('role','img');dot.setAttribute('aria-label',online?'Online':'Offline');avatar.append(dot);name.append(el('strong','',person.name));window.OchatCommunity?.badge(name,person);details.append(name);profile.append(avatar,details);row.append(profile);
       if(friend.status==='accepted'){
         details.append(el('small','friend-presence',online?'Online':'Offline'));
         const controls=el('div','friend-controls'),message=el('button','text-button friend-message','Message'),remove=el('button','text-button danger','Remove');message.type='button';message.title='Message';message.setAttribute('aria-label',`Message ${person.name}`);message.onclick=()=>action(message,()=>messageFriend(friend));remove.onclick=()=>confirm('Remove friend?',`Remove ${friend.name} from your friends? Saved messages remain on this device.`,'Remove',async()=>{await invoke('respond_friend',{peer:friend.peer,accept:false});await refreshFriends();});controls.append(message,remove);row.append(controls);
@@ -386,7 +386,6 @@ function prepareDialog(id) {
   if(id!=='details-dialog' && window.innerWidth<1180)closePanel('details-dialog',false);
 }
 function openDetails() {
-  $('details-dialog').classList.remove('profile-overlay');
   restoreDetailsOnWide=false;const dialog=$('details-dialog');if(dialog.open){closePanel(dialog.id);return;}
   inspectedPeer=null;inspectedRoom=selectedRoom;renderPeerCard();
   releaseTalk();prepareDialog(dialog.id);panelOpeners.set(dialog.id,$('details-toggle'));detailsModal=window.innerWidth<1180;
@@ -1107,8 +1106,7 @@ $('add-friend-form').onsubmit=event=>{event.preventDefault();syncFriendRequest()
 $('friends-button').onclick=()=>{refreshFriendsFromNavigation();setNavigationSection('friends');openNavigation($('friends-button'));$('navigation-friends-button').focus({preventScroll:true});};
 for(const section of ['rooms','friends'])$(`navigation-${section}-button`).onclick=()=>{setNavigationSection(section);if(section==='friends')refreshFriendsFromNavigation();};
 $('details-toggle').onclick=openDetails;
-$('conversation-identity').onclick=()=>{const context=conversationContext(selectedRoom);if(context.peer)showPeer(context.peer.id,context.peer.name);else if(!$('details-dialog').open)openDetails();else {inspectedPeer=null;renderPeerCard();}};
-$('profile-back').onclick=()=>{window.OchatProfiles?.close();inspectedPeer=null;renderPeerCard();$('details-dialog').scrollTop=0;const target=$('members').querySelector('.member-profile');(target || $('details-toggle')).focus({preventScroll:true});};
+$('conversation-identity').onclick=()=>{const context=conversationContext(selectedRoom);if(context.peer)showPeer(context.peer.id,context.peer.name,selectedRoom,$('conversation-identity'));else if(!$('details-dialog').open)openDetails();else {inspectedPeer=null;renderPeerCard();}};
 $('room-actions-toggle').onclick=()=>{panelOpeners.set('room-actions-dialog',$('room-actions-toggle'));show('room-actions-dialog');};
 for(const id of ['navigation-dialog','details-dialog','room-actions-dialog'])$(id).addEventListener('close',()=>{
   if($(id).open)return;if(id==='details-dialog'){if(!detailsClosingForResize)restoreDetailsOnWide=false;detailsClosingForResize=false;}const button=id==='navigation-dialog'?$('navigation-toggle'):id==='details-dialog'?$('details-toggle'):$('room-actions-toggle');button.setAttribute('aria-expanded','false');
@@ -1118,7 +1116,7 @@ document.addEventListener('keydown',event=>{if(event.key==='Escape' && $('detail
 document.addEventListener('keydown',event=>{if(event.key==='Escape')endTabDrag();});
 document.addEventListener('keydown',event=>{const tabRoot=event.target.closest?.('#conversation-tabs,#home-direct-tabs');if(!tabRoot)return;if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].includes(event.key))return;const tabs=[...tabRoot.querySelectorAll('[role="tab"]')],index=tabs.indexOf(document.activeElement);if(index<0)return;event.preventDefault();if(event.altKey && ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)){const id=tabs[index].parentElement.dataset.key,group=tabs.filter(tab=>conversationLayout.pinned.includes(tab.parentElement.dataset.key)===conversationLayout.pinned.includes(id)),position=group.indexOf(tabs[index]),target=group[position+(['ArrowRight','ArrowDown'].includes(event.key)?1:-1)];if(target)moveConversation(id,target.parentElement.dataset.key,['ArrowRight','ArrowDown'].includes(event.key));return;}const next=event.key==='Home'?0:event.key==='End'?tabs.length-1:(index+(['ArrowRight','ArrowDown'].includes(event.key)?1:-1)+tabs.length)%tabs.length;tabs[next].focus({preventScroll:true});tabs[next].scrollIntoView?.({block:'nearest',inline:'nearest'});});
 window.addEventListener('resize',()=>{
-  syncNavigationLayout();const dialog=$('details-dialog'),modal=dialog.classList.contains('profile-overlay') || window.innerWidth<1180;
+  syncNavigationLayout();const dialog=$('details-dialog'),modal=window.innerWidth<1180;
   if(!modal && restoreDetailsOnWide && !dialog.open && selectedRoom && !hasBlockingDialog()){const focused=document.activeElement;dialog.show();detailsModal=false;restoreDetailsOnWide=false;$('details-toggle').setAttribute('aria-expanded','true');focused?.focus({preventScroll:true});}
   if(dialog.open && modal!==detailsModal){if(modal && !dialog.contains(document.activeElement)){detailsClosingForResize=true;closePanel(dialog.id,false);restoreDetailsOnWide=true;detailsModal=modal;return;}if(modal && [...document.querySelectorAll('dialog[open]')].some(d=>d.id!=='details-dialog' && (d.id!=='navigation-dialog' || navigationModal))){closePanel(dialog.id,false);detailsModal=modal;return;}const focused=dialog.contains(document.activeElement)?document.activeElement:null,scroll=dialog.scrollTop;panelOpeners.delete(dialog.id);dialog.close();detailsModal=modal;if(modal){closePanel('navigation-dialog',false);dialog.showModal();}else dialog.show();panelOpeners.set(dialog.id,$('details-toggle'));$('details-toggle').setAttribute('aria-expanded','true');dialog.scrollTop=scroll;focused?.focus({preventScroll:true});}
   positionMentions();
@@ -1225,7 +1223,7 @@ boot().catch(toast);
 
 // Studio conversation tools. No content is written to browser storage.
 const toolUpdates=new Map(),deliveryStates=new Map(),verificationCache=new Map();
-let toolMessage=null,collectionRoom=null,collectionMode='all',collectionEntries=[],collectionKind='shared',verificationTarget=null,diagnosticPoll=null,activityEntries=[],activityBusy=false,activityReview=0;
+let toolMessage=null,collectionRoom=null,collectionMode='all',collectionEntries=[],collectionKind='shared',verificationTarget=null,fingerprintOpen=true,diagnosticPoll=null,activityEntries=[],activityBusy=false,activityReview=0;
 function toolReference(event){return {peer:event.peer,id:event.id};}
 function toolKey(room,reference){return `${room}:${reference.peer}:${reference.id}`;}
 function updateSlot(update){return `${toolKey(update.room,update.message)}:${update.change.kind}:${update.change.kind==='reaction'?update.actor+':'+update.change.emoji:''}`;}
@@ -1381,14 +1379,9 @@ function renderActivity(){
 }
 $('activity-button').onclick=()=>action($('activity-button'),async()=>{await refreshActivity();if(unlocked)show('activity-dialog');});
 $('review-activity').onclick=()=>action($('review-activity'),async()=>{await invoke('review_activity');await refreshActivity();});
-async function openVerification(){
-  const context=conversationContext(selectedRoom),target=inspectedPeer || context.peer;if(!target || target.id===state?.id)return;
-  const peer=target.id,generation=sessionGeneration,data=await invoke('peer_verification',{peer});if(!unlocked || generation!==sessionGeneration)return;verificationTarget=data;verificationCache.set(peer,data);$('verification-name').textContent=peerDetails(peer,target.room || selectedRoom,target.name).name;$('verification-fingerprint').textContent=data.fingerprint;updateVerificationPanel();show('verification-dialog');
-}
-function updateVerificationPanel(){const data=verificationTarget;if(!data)return;$('verification-status').textContent=data.verified?'Verified on this device':data.same_name_verified?'A different verified identity uses this name. Compare this identity separately.':'Not verified';$('confirm-verification').hidden=!!data.verified;$('remove-verification').hidden=!data.verified;if($('peer-identity').textContent===data.peer)$('peer-verification-status').textContent=data.verified?'Verified identity':'Identity not verified';}
-$('verify-peer-button').onclick=()=>action($('verify-peer-button'),openVerification);
-$('copy-fingerprint').onclick=()=>action($('copy-fingerprint'),()=>invoke('copy_text',{text:verificationTarget?.fingerprint || ''}));
-for(const [id,verified] of [['confirm-verification',true],['remove-verification',false]])$(id).onclick=()=>action($(id),async()=>{const data=verificationTarget;if(!data)return;await invoke('verify_identity',{peer:data.peer,fingerprint:data.fingerprint,verified});data.verified=verified;verificationCache.set(data.peer,data);updateVerificationPanel();});
+$('toggle-fingerprint').onclick=()=>{fingerprintOpen=!fingerprintOpen;renderPeerCard();};
+$('copy-fingerprint').onclick=()=>action($('copy-fingerprint'),async()=>{await invoke('copy_text',{text:verificationTarget?.fingerprint || ''});toast('Fingerprint copied.');});
+for(const [id,verified] of [['confirm-verification',true],['remove-verification',false]])$(id).onclick=()=>action($(id),async()=>{const data=verificationTarget;if(!data)return;await invoke('verify_identity',{peer:data.peer,fingerprint:data.fingerprint,verified});data.verified=verified;verificationCache.set(data.peer,data);fingerprintOpen=!verified;}).then(()=>{if(verificationTarget&&!$('peer-verification').hidden)$(verified?'remove-verification':'confirm-verification').focus({preventScroll:true});});
 async function refreshDiagnostics(){
   const generation=sessionGeneration,data=await invoke('voice_diagnostics');if(!unlocked || generation!==sessionGeneration || !$('voice-diagnostics-dialog').open)return;
   const audio=data.audio || {},snapshot=data.snapshot,devices=diagnosticDevices;if(!unlocked || generation!==sessionGeneration || !$('voice-diagnostics-dialog').open)return;
@@ -1408,8 +1401,8 @@ $('voice-diagnostics-dialog').addEventListener('close',()=>{clearInterval(diagno
 $('diagnostics-settings').onclick=()=>{$('voice-diagnostics-dialog').close();openSettings().then(()=>document.querySelector('[data-settings-tab="audio"]')?.click()).catch(toast);};
 function clearMessageTools(){
   clearInterval(diagnosticPoll);diagnosticPoll=null;diagnosticDevices=[];toolUpdates.clear();deliveryStates.clear();verificationCache.clear();activityEntries=[];activityBusy=false;toolMessage=null;collectionEntries=[];collectionRoom=null;verificationTarget=null;
-  for(const id of ['message-tools-dialog','edit-message-dialog','reaction-dialog','collection-dialog','activity-dialog','verification-dialog','voice-diagnostics-dialog'])$(id).close();
-  for(const id of ['message-tools-actions','message-tools-context','collection-results','activity-results','verification-fingerprint','verification-name','verification-status','voice-diagnostics-facts','voice-diagnostics-peers','voice-diagnostics-room','voice-diagnostics-advice','reaction-custom'])$(id).replaceChildren();
+  for(const id of ['message-tools-dialog','edit-message-dialog','reaction-dialog','collection-dialog','activity-dialog','voice-diagnostics-dialog'])$(id).close();
+  for(const id of ['message-tools-actions','message-tools-context','collection-results','activity-results','verification-fingerprint','verification-hint','voice-diagnostics-facts','voice-diagnostics-peers','voice-diagnostics-room','voice-diagnostics-advice','reaction-custom'])$(id).replaceChildren();
   $('edit-message-text').value='';$('collection-query').value='';$('peer-verification-status').textContent='';$('activity-button').textContent='Activity';$('activity-button').disabled=true;
 }
 setInterval(()=>{if(!unlocked)return;if([...deliveryStates].some(([key,value])=>key.startsWith(selectedRoom+':')&&value.status==='sending'))refreshDeliveries(selectedRoom).catch(()=>{});},3000);

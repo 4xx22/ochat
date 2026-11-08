@@ -468,7 +468,7 @@ test('private chats identify the recipient in the header, tabs, composer and pro
   assert.equal(a.get('participants-section').hidden,true);
   a.get('peer-copy').click();await flush();assert.equal(a.calls.find(([c])=>c==='copy_text')[1].text,'peer');
   assert.equal(a.calls.some(([c])=>['call_peer','start_voice','accept_call'].includes(c)),false);
-  a.get('details-dialog').close();await flush();assert.equal(a.window.document.activeElement,a.get('conversation-identity'));
+  a.get('floating-profile-close').click();await flush();assert.equal(a.window.document.activeElement,a.get('conversation-identity'));
 });
 
 test('sender profiles distinguish identical names by identity and never interpret markup',async t=>{
@@ -522,8 +522,8 @@ test('profile voice state follows the active speaker in another conversation',as
 test('desktop private profiles open only on request and stay closed after dismissal',async t=>{
   const a=await setup(t);a.session(base);a.get('message').focus();a.input('Draft');
   Object.defineProperty(a.window,'innerWidth',{value:1600,configurable:true});a.session(connected);
-  assert.equal(a.get('details-dialog').open,false);assert.equal(a.window.document.activeElement,a.get('message'));a.get('conversation-identity').click();assert.equal(a.get('details-dialog').open,true);
-  a.get('details-dialog').close();await flush();a.app.render({...connected,peers:[{...connected.peers[0],typing:true}]});
+  assert.equal(a.get('details-dialog').open,false);assert.equal(a.window.document.activeElement,a.get('message'));a.get('conversation-identity').click();assert.equal(a.get('floating-profile').open,true);assert.equal(a.get('details-dialog').open,false);
+  a.get('floating-profile-close').click();await flush();a.app.render({...connected,peers:[{...connected.peers[0],typing:true}]});
   assert.equal(a.get('details-dialog').open,false);assert.equal(a.get('message').value,'Draft');
 });
 
@@ -838,9 +838,9 @@ test('shared gallery filters file offers, images and safe links without loading 
 });
 
 test('identity verification requires an explicit comparison and carries the exact fingerprint',async t=>{
- const a=await setup(t);a.session(connected);const previous=a.window.__TAURI__.core.invoke;a.window.__TAURI__.core.invoke=async(c,args)=>c==='peer_verification'?{peer:args.peer,fingerprint:'ABCD 1234',verified:false,same_name_verified:true}:previous(c,args);
- a.get('conversation-identity').click();await flush();a.get('verify-peer-button').click();await flush();assert.equal(a.get('verification-dialog').open,true);assert.equal(a.get('verification-fingerprint').textContent,'ABCD 1234');assert.match(a.get('verification-status').textContent,/different verified identity/);assert.equal(a.calls.some(([c])=>c==='verify_identity'),false);
- a.get('confirm-verification').click();await flush();assert.ok(a.calls.some(([c,args])=>c==='verify_identity'&&args.peer==='peer'&&args.fingerprint==='ABCD 1234'&&args.verified===true));await a.app.lockAccount();assert.equal(a.get('verification-fingerprint').textContent,'');
+ const a=await setup(t);const previous=a.window.__TAURI__.core.invoke;a.window.__TAURI__.core.invoke=async(c,args)=>c==='peer_verification'?{peer:args.peer,fingerprint:'ABCD 1234',verified:false,same_name_verified:true}:previous(c,args);a.session(connected);
+ a.get('conversation-identity').click();await flush();assert.equal(a.get('peer-verification').hidden,false);assert.equal(a.get('verification-fingerprint').textContent,'ABCD 1234');assert.equal(a.get('verification-fingerprint').querySelectorAll('span').length,2);assert.match(a.get('verification-hint').textContent,/different verified identity/);assert.equal(a.calls.some(([c])=>c==='verify_identity'),false);a.get('toggle-fingerprint').click();assert.equal(a.get('verification-fingerprint').hidden,true);assert.equal(a.get('confirm-verification').hidden,true);a.get('toggle-fingerprint').click();assert.equal(a.get('confirm-verification').hidden,false);
+ a.get('confirm-verification').click();await flush();assert.ok(a.calls.some(([c,args])=>c==='verify_identity'&&args.peer==='peer'&&args.fingerprint==='ABCD 1234'&&args.verified===true));await flush();assert.equal(a.get('peer-verification-status').textContent,'Identity verified');assert.equal(a.get('verification-fingerprint').hidden,true);assert.equal(a.get('remove-verification').hidden,false);await a.app.lockAccount();assert.equal(a.get('verification-fingerprint').textContent,'');assert.equal(a.get('peer-verification').hidden,true);
 });
 test('voice diagnostics reports native devices and latency without opening capture',async t=>{
  const a=await setup(t);a.session({...connected,voice:true});const previous=a.window.__TAURI__.core.invoke;a.window.__TAURI__.core.invoke=async(c,args)=>c==='voice_diagnostics'?{snapshot:{...connected,voice:true,muted:true,peers:[{id:'peer',name:'Peer',voice:true,route:'direct',latency_ms:300}]},audio:settings.audio,level:0.25}:c==='audio_devices'?[{id:'mic',name:'Studio microphone',input:true,is_default:true},{id:'out',name:'Headphones',input:false,is_default:true}]:previous(c,args);
@@ -1227,7 +1227,7 @@ test('pasting an image sends it without changing the text draft',async t=>{
  const text=new a.window.Event('paste',{bubbles:true,cancelable:true});Object.defineProperty(text,'clipboardData',{value:{items:[],types:['text/plain']}});a.get('message').dispatchEvent(text);assert.equal(text.defaultPrevented,false);
 });
 test('profile cards show bios, open a large photo and clear private labels on Lock',async t=>{
- const a=await setup(t),data='data:image/png;base64,AAAA';const previous=a.window.__TAURI__.core.invoke;a.window.__TAURI__.core.invoke=async(command,args)=>command==='emoji_asset'?data:previous(command,args);a.session({...connected,peers:[{...connected.peers[0],name:'PrivateProfile',bio:'PRIVATE BIO',avatar_hash:'a'.repeat(64)}]});a.get('conversation-identity').click();await flush();assert.equal(a.get('details-dialog').classList.contains('profile-overlay'),true);assert.equal(a.get('peer-bio').textContent,'PRIVATE BIO');a.get('peer-avatar').click();assert.equal(a.get('profile-photo-dialog').open,true);assert.equal(a.get('photo-viewer-image').getAttribute('src'),data);await a.app.lockAccount();assert.equal(a.window.document.body.innerHTML.includes('PRIVATE BIO'),false);assert.equal(a.window.document.body.innerHTML.includes('PrivateProfile'),false);assert.equal(a.get('photo-viewer-image').getAttribute('src'),null);
+ const a=await setup(t),data='data:image/png;base64,AAAA';const previous=a.window.__TAURI__.core.invoke;a.window.__TAURI__.core.invoke=async(command,args)=>command==='emoji_asset'?data:previous(command,args);a.session({...connected,peers:[{...connected.peers[0],name:'PrivateProfile',bio:'PRIVATE BIO',avatar_hash:'a'.repeat(64)}]});a.get('conversation-identity').click();await flush();assert.equal(a.get('floating-profile').open,true);assert.equal(a.get('peer-bio').textContent,'PRIVATE BIO');a.get('peer-avatar').click();assert.equal(a.get('profile-photo-dialog').open,true);assert.equal(a.get('photo-viewer-image').getAttribute('src'),data);await a.app.lockAccount();assert.equal(a.window.document.body.innerHTML.includes('PRIVATE BIO'),false);assert.equal(a.window.document.body.innerHTML.includes('PrivateProfile'),false);assert.equal(a.get('photo-viewer-image').getAttribute('src'),null);
 });
 test('custom appearance previews cancel and Tor changes relock the account',async t=>{
  const a=await setup(t);a.session(connected);a.get('settings-button').click();await flush();a.get('appearance-background-color-enabled').checked=true;a.get('appearance-background-color').value='#ffffff';a.get('appearance-background-color').dispatchEvent(new a.window.Event('input'));await new Promise(resolve=>a.window.requestAnimationFrame(resolve));assert.equal(a.window.document.documentElement.style.getPropertyValue('--custom-bg'),'#FFFFFF');a.get('settings-cancel').click();assert.equal(a.window.document.documentElement.style.getPropertyValue('--custom-bg'),'');

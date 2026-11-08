@@ -5,7 +5,7 @@
   let api,dialog,home,anchor,returnFocus,closing=false,bioCursor=[0,0];
   function position(){
     if(!dialog?.open)return;
-    const gap=12,topEdge=Math.max(12,(document.querySelector('.app-header')?.getBoundingClientRect().bottom||30)+8),width=Math.min(344,innerWidth-24);dialog.style.width=width+'px';dialog.style.maxHeight=(innerHeight-topEdge-gap)+'px';
+    const gap=12,topEdge=Math.max(12,(document.querySelector('.app-header')?.getBoundingClientRect().bottom||30)+8),width=Math.min(440,innerWidth-24);dialog.style.width=width+'px';dialog.style.maxHeight=(innerHeight-topEdge-gap)+'px';
     const height=dialog.getBoundingClientRect().height,box=anchor?.isConnected?anchor.getBoundingClientRect():null;
     let left=(innerWidth-width)/2,top=(innerHeight-height)/2;
     if(box&&box.width){left=box.right+gap+width<=innerWidth-gap?box.right+gap:box.left-width-gap;top=box.top-64;}
@@ -19,11 +19,10 @@
     if(restore&&opener?.isConnected&&!opener.closest('[hidden]'))opener.focus({preventScroll:true});
   }
   function open(origin){
-    anchor?.classList.remove('profile-selected');anchor=origin?.closest?.('.member,.channel-person,.message')||origin;returnFocus=origin;
-    anchor?.classList.add('profile-selected');dialog.append($('peer-card'));
-    const facts=$('peer-card').querySelector('.peer-facts');
-    if(facts)facts.classList.add('profile-connection-facts');
-    $('profile-extra-details').open=false;if(!dialog.open)dialog.showModal();dialog.scrollTop=0;position();$('floating-profile-close').focus({preventScroll:true});
+    anchor?.classList.remove('profile-selected');
+    anchor=origin?.closest?.('.friend-row,#conversation-identity')||origin===document.body?null:origin?.closest?.('.member,.channel-person,.message')||origin;returnFocus=origin;
+    dialog.classList.toggle('profile-centered',!anchor);anchor?.classList.add('profile-selected');dialog.append($('peer-card'));
+    $('profile-more').open=false;if(!dialog.open)dialog.showModal();dialog.scrollTop=0;position();$('floating-profile-close').focus({preventScroll:true});
   }
   function groups(){
     const list=$('members');for(const heading of list.querySelectorAll('.member-group-title'))heading.remove();
@@ -61,11 +60,12 @@
     const banner=node('div','profile-banner'),closeButton=node('button','icon-button','×');closeButton.id='floating-profile-close';closeButton.type='button';closeButton.setAttribute('aria-label','Close profile');closeButton.onclick=()=>close();banner.append(closeButton);dialog.append(banner);document.body.append(dialog);
     dialog.addEventListener('cancel',event=>{event.preventDefault();close();});dialog.addEventListener('click',event=>{if(event.target===dialog){const rect=dialog.getBoundingClientRect();if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom){close();const next=document.elementFromPoint?.(event.clientX,event.clientY)?.closest('.member-profile');if(next){next.focus({preventScroll:true});next.click();}}}});
     dialog.addEventListener('close',()=>{if(!closing&&!dialog.open&&dialog.contains($('peer-card')))close();});
-    $('peer-card').querySelector('.peer-actions').before($('peer-shared-rooms'));
-    const extra=node('details','profile-extra-details'),summary=node('summary','','Identity & security');extra.id='profile-extra-details';extra.append(summary,$('verify-peer-button'),$('peer-verification-status'),$('peer-card').querySelector('.identity-details'));extra.querySelector('.identity-details').open=true;$('peer-card').append(extra);
-    // Expanding identity details or loading a profile can grow the anchored card.
+    $('peer-card').querySelector('.peer-facts').after($('peer-shared-rooms'));
+    const more=$('profile-more');
+    document.addEventListener('click',event=>{if(more.open&&(!more.contains(event.target)||event.target.closest('.profile-more-menu button')))more.open=false;});
+    more.addEventListener('keydown',event=>{if(event.key==='Escape'&&more.open){event.preventDefault();event.stopPropagation();more.open=false;more.querySelector('summary').focus();}});
+    // Loading a profile or showing its fingerprint can grow the anchored card.
     // Keep its scroll container inside the viewport, including its bottom edge.
-    extra.addEventListener('toggle',position);
     if(window.ResizeObserver)new ResizeObserver(position).observe(dialog);
     window.addEventListener('resize',position);setupBio();
   }

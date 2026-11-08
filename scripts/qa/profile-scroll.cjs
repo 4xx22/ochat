@@ -15,7 +15,7 @@ const output=path.resolve(process.env.OCHAT_QA_OUTPUT||path.join(__dirname,'../.
    if(!await page.locator('#details-dialog').evaluate(n=>n.open))await page.locator('#details-toggle').click();
    const member=page.locator('#members [data-key="'+'b'.repeat(64)+'"] .member-profile');await member.click();
    const dialog=page.locator('#floating-profile');
-   await page.locator('#profile-extra-details > summary').click();
+   await page.locator('#profile-more > summary').click();
    await page.waitForTimeout(100);
    const geometry=await dialog.evaluate(n=>({top:n.getBoundingClientRect().top,bottom:n.getBoundingClientRect().bottom,client:n.clientHeight,scroll:n.scrollHeight,overflow:getComputedStyle(n).overflowY,viewport:innerHeight}));
    console.log(JSON.stringify({theme,width,height,...geometry}));
@@ -26,10 +26,11 @@ const output=path.resolve(process.env.OCHAT_QA_OUTPUT||path.join(__dirname,'../.
    const identityBounds=await identity.boundingBox();assert.ok(identityBounds.y>=0&&identityBounds.y+identityBounds.height<=height,'Full identity is visible');
    const scrollTop=await dialog.evaluate(n=>n.scrollTop);await page.evaluate(()=>render());assert.equal(await dialog.evaluate(n=>n.scrollTop),scrollTop,'Presence updates preserve profile scroll');
    await page.screenshot({path:path.join(output,`${theme}-${width}-profile-identity.png`)});
+   await page.keyboard.press('Escape');assert.equal(await page.locator('#profile-more').evaluate(n=>n.open),false);assert.equal(await dialog.evaluate(n=>n.open),true);
    await page.keyboard.press('Escape');assert.equal(await dialog.evaluate(n=>n.open),false);assert.equal(await member.evaluate(n=>n===document.activeElement),true);
    await member.click();assert.equal(await dialog.evaluate(n=>n.scrollTop),0);
-   await page.locator('#profile-extra-details > summary').focus();await page.keyboard.press('Enter');await page.keyboard.press('Tab');
-   assert.equal(await page.locator('#verify-peer-button').evaluate(n=>n===document.activeElement),true);
+   await page.locator('#profile-more > summary').focus();await page.keyboard.press('Enter');await page.keyboard.press('Tab');
+   assert.equal(await page.locator('#peer-copy').evaluate(n=>n===document.activeElement),true);
    await page.setViewportSize({width:480,height:520});await page.waitForTimeout(100);
    const resized=await dialog.boundingBox();assert.ok(resized.x>=0&&resized.y>=0&&resized.x+resized.width<=480&&resized.y+resized.height<=510);
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
