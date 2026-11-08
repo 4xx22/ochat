@@ -331,6 +331,17 @@ test('unread messages are highlighted and marked read only after focused viewing
   const previous=a.window.__TAURI__.core.invoke;a.window.__TAURI__.core.invoke=async(command,args)=>{const value=await previous(command,args);return command==='mark_read'?{room:args.room,through:args.through,ids:args.ids}:value;};a.window.document.hasFocus=()=>true;a.window.dispatchEvent(new a.window.Event('focus'));await new Promise(resolve=>setTimeout(resolve,2100));assert.equal(a.get('timeline').querySelector('.unread'),null);assert.ok(a.calls.some(([c])=>c==='mark_read'));
 });
 
+test('clicking inside the open conversation marks it read at once, even without document focus',async t=>{
+  const a=await setup(t);a.session(connected);await a.app.handleEvent({type:'message',room:'room',id:'00000000-0000-4000-8000-000000000002',peer:'peer',name:'Peer',text:'Unread',timestamp:1,emojis:[]});
+  const previous=a.window.__TAURI__.core.invoke;a.window.__TAURI__.core.invoke=async(command,args)=>{const value=await previous(command,args);return command==='mark_read'?{room:args.room,through:args.through,ids:args.ids}:value;};
+  const pointer=async node=>{node.dispatchEvent(new a.window.Event('pointerdown',{bubbles:true}));await new Promise(resolve=>setTimeout(resolve,20));await flush();},marks=()=>a.calls.filter(([c])=>c==='mark_read').length;
+  a.window.document.hasFocus=()=>false;
+  await pointer(a.get('conversation-rail'));assert.equal(marks(),0);assert.ok(a.get('timeline').querySelector('.unread'));
+  Object.defineProperty(a.window.document,'visibilityState',{value:'hidden',configurable:true});await pointer(a.get('timeline'));assert.equal(marks(),0);
+  Object.defineProperty(a.window.document,'visibilityState',{value:'visible',configurable:true});a.window.dispatchEvent(new a.window.Event('blur'));
+  await pointer(a.get('timeline'));assert.equal(marks(),1);assert.equal(a.get('timeline').querySelector('.unread'),null);
+});
+
 test('desktop notifications default to direct messages and mentions with private previews',async t=>{
   const a=await setup(t);a.session(connected);a.get('settings-button').click();await flush();assert.equal(a.get('desktop-notifications').checked,true);assert.equal(a.get('notification-previews').checked,false);assert.equal(a.get('notification-scope').value,'mentions_and_direct');a.get('notification-previews').checked=true;a.get('settings-save').click();await flush();assert.equal(a.calls.find(([c])=>c==='save_settings')[1].settings.notification_previews,true);
 });
@@ -459,7 +470,7 @@ test('private chats identify the recipient in the header, tabs, composer and pro
   assert.equal(a.get('room-title').textContent,'Peer');
   assert.equal(a.get('conversation-kind').textContent,'Private chat');
   assert.equal(a.get('message').placeholder,'Message Peer…');
-  assert.equal(a.get('composer-status').textContent,'To Peer · Private chat');
+  assert.equal(a.get('composer-status').textContent,'');
   assert.equal(a.get('conversation-tabs').querySelector('strong').textContent,'Peer');
   assert.equal(a.get('voice-button').closest('header').className,'topbar');
   a.get('conversation-identity').focus();a.get('conversation-identity').click();

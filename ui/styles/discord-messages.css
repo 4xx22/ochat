@@ -62,6 +62,8 @@
 .discord-shell #typing-status {flex-shrink:0;min-height:20px;height:20px;margin:0;padding:5px 23px 0;font-size:10px;color:var(--muted);}
 .discord-shell .composer-note {font-size:9px;min-height:16px;margin:0 22px 7px;color:var(--muted);}
 .discord-shell .composer-note span:last-child {display:none;}
+.discord-shell .composer-note:has(#composer-status:empty) {display:none;}
+.discord-shell #conversation-panel:has(#composer-status:empty) #composer {margin-bottom:12px;}
 .discord-shell .reply-draft {margin:0 15px;padding:8px 12px;border-radius:5px 5px 0 0;border:0;border-left:2px solid var(--accent);background:var(--panel);}
 .discord-shell .reply-draft>div {font-size:11px;}
 .discord-shell .reply-draft button {font-size:10px;}

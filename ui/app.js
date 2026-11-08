@@ -50,14 +50,24 @@ let talkSequence=Date.now()*1000;
 const readMarkers = new Map(), selectedMentions = new Map();
 let detailsModal=false, navigationModal=true, restoreDetailsOnWide=false, detailsClosingForResize=false;
 let inspectedPeer=null, inspectedRoom=null;
-let readTimer = null, viewTimer = null, mentionOptions = [], mentionIndex = 0, mentionRange = null, historyLoading = false;
+let readTimer = null, viewTimer = null, mentionOptions = [], mentionIndex = 0, mentionRange = null, historyLoading = false, pointerAttentionUntil = 0;
 function atBottom() { const timeline=$('timeline');return timeline.scrollHeight-timeline.scrollTop-timeline.clientHeight<60; }
-function readingRoom() {return unlocked && document.body.dataset.homeOpen!=='true' && document.body.dataset.voiceView!=='true' && !!selectedRoom && !historyLoading && !hasBlockingDialog() && document.visibilityState !== 'hidden' && document.hasFocus() && atBottom();}
+function latestMessageVisible() { const timeline=$('timeline'),rows=timeline.querySelectorAll('.message[data-message-id]'),last=rows[rows.length-1];return !!last && last.getBoundingClientRect().top<timeline.getBoundingClientRect().bottom; }
+function pointerAttention() {return Date.now()<pointerAttentionUntil;}
+/* Clicking non-focusable content does not always give the webview document focus, so a recent click in the conversation counts as attention too. */
+function windowAttentive() {return document.visibilityState!=='hidden' && (document.hasFocus() || pointerAttention());}
+function readingRoom() {return unlocked && document.body.dataset.homeOpen!=='true' && document.body.dataset.voiceView!=='true' && !!selectedRoom && !historyLoading && !hasBlockingDialog() && windowAttentive() && (atBottom() || (pointerAttention() && latestMessageVisible()));}
 function reportView() {if(!tauri)return;invoke('chat_view',{room:unlocked?selectedRoom:null,channel:selectedChannel(),reading:readingRoom()}).catch(()=>{});}
-function scheduleRead() {
+function scheduleRead() {queueRead(2000);}
+function readOnPointer() {
+  pointerAttentionUntil=Date.now()+3000;
+  if(unread.has(selectedRoom) || attentionRooms.has(selectedRoom) || $('timeline').querySelector('.message.unread'))queueRead(0);
+}
+function queueRead(delay) {
   acknowledgeConversation();
   clearTimeout(viewTimer);viewTimer=setTimeout(reportView,100);
-  if(readTimer || !readingRoom())return;
+  if(!readingRoom())return;
+  if(readTimer){if(delay)return;clearTimeout(readTimer);}
   const room=selectedRoom,scope=draftKey(),channel=selectedChannel(),generation=sessionGeneration;
   readTimer=setTimeout(async()=>{
     readTimer=null;if(!readingRoom() || scope!==draftKey() || generation!==sessionGeneration)return;
@@ -65,7 +75,7 @@ function scheduleRead() {
     const through=Math.max(...rows.map(row=>Number(row.dataset.timestamp)));
     const ids=rows.filter(row=>Number(row.dataset.timestamp)===through).map(row=>row.dataset.messageId);
     try {const marker=await invoke('mark_read',{room,channel,through,ids});if(!unlocked || generation!==sessionGeneration || scope!==draftKey())return;readMarkers.set(scope,marker);rows.forEach(row=>row.classList.remove('unread'));$('timeline').querySelector('.unread-divider')?.remove();const remaining=$('timeline').querySelectorAll('.message.unread').length;if(remaining)unread.set(room,remaining);else unread.delete(room);roomsKey='';renderRooms();if(channel){const counts=await invoke('unread_counts');if(unlocked && generation===sessionGeneration && counts && typeof counts==='object'){for(const id of Object.keys(counts))unread.set(id,counts[id]);if(!counts[room])unread.delete(room);roomsKey='';renderRooms();}const view=await invoke('channel_view',{room});if(unlocked && generation===sessionGeneration && scope===draftKey() && Array.isArray(view?.channels))window.OchatChannels?.setUnread(view.unread || {},view.channels);}}catch{}
-  },2000);
+  },delay);
 }
 function isUnread(event) {if(event.peer===state?.id)return false;const marker=readMarkers.get(draftKey(event.room || selectedRoom,eventChannel(event) || selectedChannel(event.room || selectedRoom)));return !marker || event.timestamp>marker.through || (event.timestamp===marker.through && !marker.ids.includes(event.id));}
 function mentionCandidates() {const members=(state?.members || state?.peers || []);return members.map(peer=>({...peer,token:members.filter(p=>p.name===peer.name).length>1?`${peer.name}#${peer.id.slice(0,8)}`:peer.name}));}
@@ -485,7 +495,7 @@ async function lockAccount() {
   $('conversation-identity').setAttribute('aria-label','View conversation details');$('room-title').removeAttribute('title');$('message').setAttribute('aria-label','Message');$('message').placeholder='Write a draft…';$('send-button').title='Send message';$('voice-button').title='Join voice';delete $('peer-voice').dataset.speaking;
   releaseTalk();$('settings-button').disabled=true;$('navigation-toggle').disabled=true;$('friends-button').disabled=true;friendRequestPending=false;$('send-friend-request').disabled=true;$('friends-own-id').textContent='';$('friends-own-id').removeAttribute('title');$('copy-contact-id').disabled=true;$('copy-contact-id').textContent='Copy';$('friends-button').textContent='Friends';$('room-voice-roster').replaceChildren();$('room-voice-elapsed').textContent='00:00';$('voice-label').textContent='Voice connected';$('voice-hint').textContent='';$('voice-elapsed').textContent='00:00';$('conversation-panel').removeAttribute('aria-labelledby');membersKey='';roomsKey='';friendsRenderKey='';lastTabSelection=null;$('private-conversation-tabs').replaceChildren();$('room-conversation-tabs').replaceChildren();$('private-tab-count').textContent='0';$('room-tab-count').textContent='0';$('details-toggle').disabled=true;$('room-actions-toggle').disabled=true;$('lock-button').disabled=true;friends=[];friendRetries.clear();friendGeneration++;$('friend-list').replaceChildren();$('talk-button').hidden=true;$('reconnect-panel').hidden=true;searchGeneration++;replyDrafts.clear();messageCache.clear();searchRoom=null;notificationRoom=null;$('search-results').replaceChildren();$('search-query').value='';$('search-status').textContent='';$('room-notifications-name').textContent='';renderReply();
   historyLoading=false;$('history-context').hidden=true;
-  clearTimeout(readTimer);clearTimeout(viewTimer);readTimer=null;readMarkers.clear();selectedMentions.clear();closeMentions();
+  clearTimeout(readTimer);clearTimeout(viewTimer);readTimer=null;pointerAttentionUntil=0;readMarkers.clear();selectedMentions.clear();closeMentions();
   window.OchatWorkspace?.reset();
   sessionGeneration++; stopTyping(); stopAudioPoll(); unlocked = false; window.OchatChannels?.reset(); window.OchatGifPicker?.reset();window.OchatPersonalization?.reset();window.OchatCommunity?.reset();emojiLoadGeneration++; historyGeneration++; selectedRoom = null; loadedRoom = null; state = null; settings = null; rooms = []; assets.clear(); assetLoads.clear(); drafts.clear(); liveOffers.clear(); shownMessages.clear();
   emojiEntries = []; editingEmoji = null; confirmCallback = null; recoveryRequired = false; roomSnapshots.clear(); archivedChannelViews.clear();archivedTextChannels.clear();roomMembers.clear(); unread.clear(); syncTaskbarUnread(); deletedRooms.clear(); assetGeneration++;
@@ -566,7 +576,7 @@ function renderComposer() {
   $('message').setAttribute('aria-label',context.room?`Message ${context.title}`:'Message');
   $('send-button').disabled = !connected || !$('message').value.trim() || !!$('send-button').dataset.busy;
   $('send-button').title = !selectedRoom ? 'Choose a friend or a room first' : !isActiveRoom() ? 'Queue this message until peers reconnect' : !state.peers.length ? 'Queue this message until a participant reconnects' : `Send to ${context.title}`;
-  const status = !selectedRoom ? 'Local draft · choose a friend or open a room to send.' : !isActiveRoom() || !state.peers.length ? 'Encrypted outbox · delivered when you and the recipient are online.' : !connected ? 'Choose a text channel to send.' : context.direct ? `To ${context.title} · Private chat` : `To everyone in ${context.title}`;
+  const status = !selectedRoom ? 'Local draft · choose a friend or open a room to send.' : !isActiveRoom() || !state.peers.length ? 'Encrypted outbox · delivered when you and the recipient are online.' : !connected ? 'Choose a text channel to send.' : context.direct ? '' : `To everyone in ${context.title}`;
   if ($('composer-status').textContent !== status) $('composer-status').textContent = status;
 }
 function normalizeLayout(value) {
@@ -667,7 +677,7 @@ document.addEventListener('pointerup',()=>{
 });
 document.addEventListener('pointercancel',()=>{if(pointerTabDrag)endTabDrag();});
 function conversationIsOpen(room) {
-  return unlocked && document.body.dataset.homeOpen!=='true' && document.body.dataset.voiceView!=='true' && selectedRoom===room && !historyLoading && !hasBlockingDialog() && document.visibilityState!=='hidden' && document.hasFocus();
+  return unlocked && document.body.dataset.homeOpen!=='true' && document.body.dataset.voiceView!=='true' && selectedRoom===room && !historyLoading && !hasBlockingDialog() && windowAttentive();
 }
 function acknowledgeConversation() {
   if(conversationIsOpen(selectedRoom) && attentionRooms.delete(selectedRoom))renderRooms();
@@ -1017,7 +1027,7 @@ $('delete-room').onclick = () => { const room = selectedRoom; confirm('Delete th
 $('forget-room').onclick=()=>requestForgetRoom(selectedRoom);
 $('composer').onsubmit = event => { event.preventDefault(); if (!$('message').value.trim()) return; if (!selectedRoom) { toast('Choose a conversation first. Your draft is kept.'); return; } action($('send-button'),async () => { const text = $('message').value,room=selectedRoom,channel=selectedChannel(),scope=draftKey(); const reply=replyDrafts.get(scope);const chosen=[...(chosenDraftEmojis.get(scope)?.values() || [])].filter(e=>text.includes(`:${e.name}:`));await invoke('send_text',{room,channel,text,emojis:chosen,mentions:mentionsForDraft(text),replyTo:reply?{id:reply.id,peer:reply.peer}:null});if(replyDrafts.get(scope)===reply)replyDrafts.delete(scope);renderReply(); if (draftKey()===scope && $('message').value === text) $('message').value = ''; drafts.set(scope,'');chosenDraftEmojis.delete(scope);selectedMentions.delete(scope);closeMentions(); $('message').style.height = 'auto'; stopTyping(); $('message').focus(); }); };
 $('message').addEventListener('input',onInput); $('message').addEventListener('blur',()=>{stopTyping();closeMentions();}); $('message').addEventListener('keydown',event => { if(!$('mention-picker').hidden && !event.isComposing){if(['ArrowDown','ArrowUp'].includes(event.key)){event.preventDefault();mentionIndex=(mentionIndex+(event.key==='ArrowDown'?1:-1)+mentionOptions.length)%mentionOptions.length;renderMentionPicker();return;}if(['Enter','Tab'].includes(event.key)){event.preventDefault();chooseMention(mentionIndex);return;}if(event.key==='Escape'){event.preventDefault();closeMentions();return;}} if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); $('composer').requestSubmit(); } });
-$('timeline').addEventListener('scroll',scheduleRead);window.addEventListener('focus',scheduleRead);document.addEventListener('focusin',scheduleRead);document.addEventListener('click',scheduleRead);window.addEventListener('blur',()=>{clearTimeout(readTimer);readTimer=null;reportView();});document.addEventListener('visibilitychange',()=>{reportView();scheduleRead();});
+$('timeline').addEventListener('scroll',scheduleRead);window.addEventListener('focus',scheduleRead);document.addEventListener('focusin',scheduleRead);document.addEventListener('click',scheduleRead);$('conversation-panel').addEventListener('pointerdown',readOnPointer,true);window.addEventListener('blur',()=>{pointerAttentionUntil=0;clearTimeout(readTimer);readTimer=null;reportView();});document.addEventListener('visibilitychange',()=>{reportView();scheduleRead();});
 $('cancel-reply').onclick=()=>{replyDrafts.delete(draftKey());renderReply();$('message').focus();};
 $('latest-messages').onclick=()=>action($('latest-messages'),()=>loadRoom(selectedRoom));
 $('search-button').onclick=()=>{fillSearchChannels();searchGeneration++;searchRoom=selectedRoom;$('search-results').replaceChildren();$('search-status').textContent='';$('search-query').value='';$('search-scope').value=selectedRoom?'room':'all';$('search-scope').querySelector('[value="room"]').disabled=!selectedRoom;$('search-next').hidden=$('search-previous').hidden=true;show('search-dialog');$('search-query').focus();};
