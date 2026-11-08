@@ -1,7 +1,7 @@
 /* The shell is a real rail / navigation / conversation / members layout. */
 .discord-shell {background:var(--bg);color:var(--text);font-family:"Segoe UI",system-ui,sans-serif;gap:0;}
 .discord-shell .app-header {height:30px;min-height:30px;padding:0 12px;gap:10px;background:var(--rail);border:0;box-shadow:none;backdrop-filter:none;}
-.discord-shell .app-mark {font-size:11px;color:var(--muted);gap:6px;letter-spacing:0;}
+.discord-shell .app-mark {min-width:0;font-size:11px;color:var(--muted);gap:6px;letter-spacing:0;}
 .discord-shell .app-mark img {width:16px;height:16px;}
 .discord-shell .studio-wordmark small {display:none;}
 .discord-shell main {flex:1;min-height:0;width:100%;overflow:hidden;}

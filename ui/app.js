@@ -242,6 +242,10 @@ function renderFriendUnread() {
     badge.textContent=`${count} new`;
   }
 }
+function contactPresence() {
+  const people=friends.filter(friend=>friend.status==='accepted').map(friend=>peerDetails(friend.peer,friend.direct_room,friend.name));
+  return {known:people.length,online:people.some(person=>person.online&&person.availability!=='invisible')};
+}
 function renderFriends() {
   window.OchatProductivity?.sync();
   const key=JSON.stringify([friends,[state,...roomSnapshots.values()].flatMap(s=>s?.peers?.map(p=>[p.id,p.name,p.avatar_hash,p.tor_enabled,p.online,p.availability])||[])]);if(key===friendsRenderKey)return;friendsRenderKey=key;
@@ -1436,7 +1440,7 @@ window.OchatFeatures?.init({invoke:(command,args)=>command==='send_dropped_files
 window.OchatChannels?.init({invoke,toast,show,confirm,releaseTalk,selectText:selectTextChannel,context:()=>({unlocked,generation:sessionGeneration,room:selectedRoom,tor_enabled:!!settings?.tor_enabled,voice:activeVoice(),state:snapshotFor(selectedRoom)}),refresh:async()=>{const generation=sessionGeneration;const snapshots=await invoke('room_snapshots');if(!unlocked || generation!==sessionGeneration)return;for(const snapshot of snapshots){if(snapshot.room){roomSnapshots.set(snapshot.room.id,snapshot);if(snapshot.room.id===selectedRoom)state=snapshot;}}render();},profile:peer=>showPeer(peer.id,peer.name,selectedRoom),avatar:(node,peer)=>profileAvatar(node,peer.name,peer.avatar_hash,peer.id)});
 
 window.OchatGifPicker?.init({invoke:(command,args)=>['send_risibank_image','send_saved_image'].includes(command)?invokeImage(command,args):invoke(command,args),toast,show,context:()=>({unlocked,generation:sessionGeneration,room:selectedRoom,channel:selectedChannel(),replyTo:replyDrafts.get(draftKey()) || null})});
-window.OchatPersonalization?.init({invoke:(command,args)=>command==='send_clipboard_image'?invokeImage(command,args):invoke(command,args),toast,show,profileAvatar,insert:insertEmoji,emojis:unicodeEmojis,context:()=>({unlocked,generation:sessionGeneration,state,settings,imageToken:imageRequestToken,room:selectedRoom,channel:selectedChannel(),replyTo:replyDrafts.get(draftKey()) || null}),refresh:async()=>{const generation=sessionGeneration,next=await invoke('snapshot');if(unlocked&&generation===sessionGeneration){state=next;render();}},privateUnread:()=>allRooms().filter(r=>r.capacity===2).reduce((sum,r)=>sum+(unread.get(r.id)||0),0),commonRooms:peer=>allRooms().filter(r=>r.capacity!==2 && (snapshotFor(r.id)?.members || roomMembers.get(r.id) || []).some(m=>m.id===peer)).map(r=>r.name)});
+window.OchatPersonalization?.init({contactPresence,invoke:(command,args)=>command==='send_clipboard_image'?invokeImage(command,args):invoke(command,args),toast,show,profileAvatar,insert:insertEmoji,emojis:unicodeEmojis,context:()=>({unlocked,generation:sessionGeneration,state,settings,imageToken:imageRequestToken,room:selectedRoom,channel:selectedChannel(),replyTo:replyDrafts.get(draftKey()) || null}),refresh:async()=>{const generation=sessionGeneration,next=await invoke('snapshot');if(unlocked&&generation===sessionGeneration){state=next;render();}},privateUnread:()=>allRooms().filter(r=>r.capacity===2).reduce((sum,r)=>sum+(unread.get(r.id)||0),0),commonRooms:peer=>allRooms().filter(r=>r.capacity!==2 && (snapshotFor(r.id)?.members || roomMembers.get(r.id) || []).some(m=>m.id===peer)).map(r=>r.name)});
 
 function fillSearchChannels(){const select=$('search-channel');select.replaceChildren();const all=el('option','','All channels');all.value='';select.append(all);for(const channel of channelContextFor()?.channels || []){if(channel.kind!=='text')continue;const option=el('option','','# '+channel.name);option.value=channel.id;select.append(option);}select.disabled=select.options.length<=1;}
 function setupAudioPreferences(){

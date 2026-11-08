@@ -350,6 +350,18 @@ test('a title bar indicator shows while Tor connects at startup and does not ret
   ready=false;await new Promise(resolve=>setTimeout(resolve,2200));assert.equal(a.get('tor-connecting').hidden,true);
 });
 
+test('the startup indicator waits for a contact after Tor is ready and gives up after a bounded wait',async t=>{
+  const a=await setup(t);let online=false;const previous=a.window.__TAURI__.core.invoke,friend=()=>({peer:'friend',name:'Friend',status:'accepted',direct_room:null,profile_known:true,presence_online:online});
+  a.window.__TAURI__.core.invoke=async(command,args)=>command==='network_privacy_status'?{enabled:true,ready:true}:command==='list_friends'?[friend()]:previous(command,args);
+  const poll=()=>new Promise(resolve=>setTimeout(resolve,2200)),label=()=>a.get('tor-connecting-label').textContent;
+  a.app.session(connected,{...structuredClone(settings),tor_enabled:true});await a.app.handleEvent({type:'friends_changed'});await flush();assert.equal(label(),'Connecting to Tor…');
+  await poll();assert.equal(a.get('tor-connecting').hidden,false);assert.equal(label(),'Connecting to contacts…');
+  online=true;await a.app.handleEvent({type:'friends_changed'});await flush();assert.equal(a.get('tor-connecting').hidden,true);
+  online=false;await a.app.handleEvent({type:'friends_changed'});await poll();assert.equal(a.get('tor-connecting').hidden,true);
+  a.window.OchatPersonalization.reset();a.app.session(connected,{...structuredClone(settings),tor_enabled:true});await a.app.handleEvent({type:'friends_changed'});await poll();assert.equal(a.get('tor-connecting').hidden,false);
+  const dateNow=Date.now,windowDate=a.window.Date,windowNow=windowDate.now;t.after(()=>{Date.now=dateNow;windowDate.now=windowNow;});const later=()=>dateNow()+21000;Date.now=later;windowDate.now=later;await poll();assert.equal(a.get('tor-connecting').hidden,true);
+});
+
 test('desktop notifications default to direct messages and mentions with private previews',async t=>{
   const a=await setup(t);a.session(connected);a.get('settings-button').click();await flush();assert.equal(a.get('desktop-notifications').checked,true);assert.equal(a.get('notification-previews').checked,false);assert.equal(a.get('notification-scope').value,'mentions_and_direct');a.get('notification-previews').checked=true;a.get('settings-save').click();await flush();assert.equal(a.calls.find(([c])=>c==='save_settings')[1].settings.notification_previews,true);
 });
