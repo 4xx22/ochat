@@ -59,8 +59,8 @@ mod security_media;
 #[cfg(test)]
 #[path = "security_regression_tests.rs"]
 mod security_regression_tests;
-use file_snapshot::OfferedSource;
 use crate::chat_media::{MAX_MEDIA_PREVIEW, MEDIA_NOT_PLAYABLE, MEDIA_SNIFF_LEN, media_mime};
+use file_snapshot::OfferedSource;
 #[path = "system_audio_node.rs"]
 mod system_audio_node;
 #[path = "visual_node.rs"]
@@ -3544,10 +3544,9 @@ impl ChatNode {
         let directory = file_snapshot::received_directory(&vault, room);
         let mut count = 0;
         let result: Result<()> = async {
-            let mut writer = tokio::task::spawn_blocking(move || {
-                file_snapshot::StageWriter::create(&directory)
-            })
-            .await??;
+            let mut writer =
+                tokio::task::spawn_blocking(move || file_snapshot::StageWriter::create(&directory))
+                    .await??;
             let (mut send, mut recv) = conn.open_bi().await?;
             let request = FileRequest {
                 id: Some(id),

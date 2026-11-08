@@ -38,12 +38,12 @@ use library_commands::*;
 use photo_commands::*;
 mod linux_screen;
 use linux_screen::*;
+mod chat_media_commands;
 mod shortcut_keys;
 mod shortcuts;
-mod chat_media_commands;
 mod viewer;
-use media_commands::*;
 use chat_media_commands::*;
+use media_commands::*;
 type Reply<T> = Result<T, String>;
 #[tauri::command]
 async fn check_for_updates(
