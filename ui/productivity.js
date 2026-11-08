@@ -88,7 +88,7 @@
   function renderArchive(){archiveList.replaceChildren();for(const room of allRooms().filter(r=>conversationLayout.preferences?.[r.id]?.archived)){const row=make('div','archive-row');row.append(button(conversationContext(room.id).title,async()=>{archives.close();await selectRoom(room.id);setNavigationSection('rooms');},'text-button'),button('Restore',()=>archive(room.id,false)));archiveList.append(row);}if(!archiveList.children.length)archiveList.append(make('p','field-hint','No archived conversations.'));}
   function openArchives(){renderArchive();archives.openPanel();}
   const archiveButton=button('Archive conversation',async()=>{const id=selectedRoom;$('room-actions-dialog').close();if(id)await archive(id,!conversationLayout.preferences?.[id]?.archived);},'secondary full');archiveButton.id='archive-conversation';$('room-actions-dialog').append(archiveButton);
-  const archiveNav=button('Archived conversations',openArchives,'sidebar-action');$('privacy-button').before(archiveNav);
+  const archiveNav=button('Archived conversations',openArchives,'sidebar-action');archiveNav.id='archived-conversations-button';$('privacy-button').before(archiveNav);
 
   // Local date navigation uses saved history, with a calendar whose week origin is configurable.
   const calendar=dialog('history-calendar','Jump to date');let month=new Date();const calendarHeading=make('strong'),calendarGrid=make('div','history-calendar-grid');const calendarNav=make('div','calendar-nav');calendarNav.append(button('‹',()=>{month.setMonth(month.getMonth()-1);calendarRender();}),calendarHeading,button('›',()=>{month.setMonth(month.getMonth()+1);calendarRender();}));calendar.append(calendarNav,calendarGrid);const calendarStatus=make('p','field-hint');calendar.append(calendarStatus);
