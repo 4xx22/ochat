@@ -31,25 +31,18 @@
 @media(max-width:899px){.discord-shell #voice-bar{margin:0 12px 8px}}
 @media(max-width:520px){.discord-shell #voice-bar{margin:0 10px 6px}}
 
-/* Private calls keep both identities visible, including in the compact dock. */
-.discord-shell #voice-bar.private-call #voice-roster {
-  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;
-  grid-column:1/-1;order:-1;margin:0 0 4px;padding:0;overflow:visible;
-}
-.discord-shell #voice-bar.private-call .voice-person {
-  display:flex;flex-direction:column;align-items:center;justify-content:center;
-  position:relative;gap:7px;min-width:0;width:100%;padding:14px 8px;
-  border:1px solid var(--line);border-radius:16px;background:var(--field);
-  color:var(--text);text-align:center;white-space:normal;height:auto;
-}
-.discord-shell #voice-bar.private-call .voice-person:hover{background:var(--hover)}
-.discord-shell #voice-bar.private-call .voice-avatar{width:48px;height:48px;min-width:48px;flex:none;font-size:17px}
-.discord-shell #voice-bar.private-call .voice-person-name{max-width:100%;white-space:normal;overflow-wrap:anywhere;font-size:12px;font-weight:600}
-.discord-shell #voice-bar.private-call .call-person-connection{font-size:10px;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
+/* Private calls show the other person as a compact row; your own identity is the account block. */
+.discord-shell #voice-bar.private-call :is(.visual-controls,#talk-button,.dock-technical){order:1}
+.discord-shell #voice-bar.private-call #voice-roster{display:flex;flex-direction:column;gap:4px;margin:0;padding:0;overflow:visible}
+.discord-shell #voice-bar.private-call #voice-roster:not(:has(.voice-person:not(.is-self))){display:none}
+.discord-shell #voice-bar.private-call:has(#voice-roster .voice-person:not(.is-self)) #voice-label{display:none}
+.discord-shell #voice-bar.private-call .voice-person.is-self{display:none}
+.discord-shell #voice-bar.private-call .voice-person{--presence-cutout:var(--panel);display:grid;grid-template-columns:32px minmax(0,1fr) auto auto;align-items:center;column-gap:8px;width:100%;height:auto;min-width:0;margin:0;padding:6px 8px;border:0;border-radius:8px;background:var(--panel);box-shadow:none;color:var(--text);text-align:left;white-space:normal}
+.discord-shell #voice-bar.private-call .voice-person:hover{--presence-cutout:var(--hover);background:var(--hover)}
+.discord-shell #voice-bar.private-call .voice-avatar{grid-column:1;grid-row:1/3;width:32px;height:32px;min-width:32px;font-size:11px;font-weight:700}
+.discord-shell #voice-bar.private-call .voice-person-name{grid-column:2;grid-row:1;min-width:0;max-width:100%;overflow:hidden;font-size:13px;font-weight:700;line-height:17px;text-overflow:ellipsis;white-space:nowrap}
+.discord-shell #voice-bar.private-call .call-person-connection{grid-column:2;grid-row:2;min-width:0;color:var(--muted);font-size:11px;line-height:15px;overflow-wrap:anywhere}
+.discord-shell #voice-bar.private-call .speech-slot{grid-column:3;grid-row:1/3;position:static}
+.discord-shell #voice-bar.private-call .voice-state-badges{grid-column:4;grid-row:1/3;margin:0;padding:0}
+.discord-shell #voice-bar.private-call [data-voice-speaking=false] .speech-slot,.discord-shell #voice-bar.private-call .voice-person[data-voice-speaking=false] .speech-slot{display:none}
 .discord-shell #voice-bar.private-call .voice-peer-ping{display:none}
-.discord-shell #voice-bar.private-call .speech-slot{position:absolute;top:8px;right:8px}
-@media(max-width:899px){
- .discord-shell #voice-bar.private-call .voice-person{display:grid;grid-template-columns:36px minmax(0,1fr);text-align:left;padding:8px;gap:3px 8px}
- .discord-shell #voice-bar.private-call .voice-avatar{grid-row:1/3;width:36px;height:36px;min-width:36px}
- .discord-shell #voice-bar.private-call .call-person-connection{grid-column:2}
-}

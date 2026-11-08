@@ -1516,6 +1516,7 @@ test('private call cards retain identities and update measured routes without re
  assert.equal(a.get('voice-bar').classList.contains('private-call'),true);
  assert.equal(roster.children.length,2);
  assert.equal(self.querySelector('.call-person-connection').textContent,'This device');
+ assert.equal(self.classList.contains('is-self'),true);assert.equal(remote.classList.contains('is-self'),false);
  assert.equal(remote.querySelector('.voice-person-name').textContent,'Peer');
  assert.equal(remote.querySelector('.call-person-connection').textContent,'Direct · 42 ms');
  a.session({...call,peers:[{...call.peers[0],route:'relay',latency_ms:90}]});

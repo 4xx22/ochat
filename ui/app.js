@@ -374,12 +374,13 @@ function syncVoiceList(container,peers,room=selectedRoom) {
     let connection=row.querySelector('.call-person-connection');
     if(privateCall){
       if(!connection){connection=el('small','call-person-connection');row.append(connection);}
+      row.classList.toggle('is-self',peer.id===state?.id);
       const self=peer.id===state?.id,online=peer.online!==false;
       const route=self?'This device':!online?'Reconnecting…':peer.route==='direct'?'Direct':peer.route==='relay'?(settings?.tor_enabled?'Tor → relay':'Relayed'):'Route unavailable';
       const ping=!self&&online&&Number.isFinite(peer.latency_ms)&&peer.latency_ms>0?Math.round(peer.latency_ms)+' ms':'Ping unavailable';
       connection.textContent=self?route:route+' · '+ping;
       connection.title=self?'Your local microphone and audio output':'Current round-trip time and encrypted connection from this device';
-    }else connection?.remove();
+    }else{connection?.remove();row.classList.remove('is-self');}
   });
   if(!peers.length)emptyList(container,'Nobody in voice.');
 }
