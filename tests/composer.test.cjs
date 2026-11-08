@@ -196,7 +196,7 @@ test('room roster groups presence without replacing member buttons during speaki
 });
 test('offline conversations queue messages while a missing conversation retains the draft',async t=>{
   const a=await setup(t);a.session(base);a.input('My draft');a.submit();assert.match(a.get('toast').textContent,/Choose a conversation/);assert.equal(a.calls.filter(([c])=>c==='send_text').length,0);
-  a.session({...connected,peers:[]});assert.equal(a.get('message').disabled,false);assert.equal(a.get('send-button').disabled,false);assert.match(a.get('composer-status').textContent,/outbox/);a.submit();await flush();assert.equal(a.calls.filter(([c])=>c==='send_text').length,1);assert.equal(a.get('message').value,'');
+  a.session(connected);assert.equal(a.get('composer-delivery-hint').hidden,true);a.session({...connected,peers:[]});assert.equal(a.get('message').disabled,false);assert.equal(a.get('send-button').disabled,false);assert.equal(a.get('composer-status').textContent,'');assert.equal(a.get('composer-delivery-hint').hidden,false);assert.match(a.get('composer-delivery-text').textContent,/both online/);a.submit();await flush();assert.equal(a.calls.filter(([c])=>c==='send_text').length,1);assert.equal(a.get('message').value,'');
   a.input('Another draft');a.session(connected);assert.equal(a.get('message').value,'Another draft');a.session({...connected,peers:[]});assert.equal(a.get('send-button').disabled,false);
 });
 test('empty drafts are blocked and successful sends clear the composer',async t=>{

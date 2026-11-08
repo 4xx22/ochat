@@ -512,7 +512,7 @@ async function lockAccount() {
   document.querySelectorAll('[data-avatar-hash]').forEach(node => { delete node.dataset.avatarHash; delete node.dataset.avatarName; delete node.dataset.avatarPeer; node.querySelector('.profile-photo')?.remove(); }); $('profile-photo-preview').textContent = 'O';
   $('timeline').replaceChildren(welcomeTemplate.cloneNode(true)); bindWelcome(); $('direct-room-list').replaceChildren();$('group-room-list').replaceChildren();$('direct-count').textContent='0';$('group-count').textContent='0'; $('members').replaceChildren(); $('custom-grid').replaceChildren(); $('typing-status').textContent = ''; $('identity-value').value = ''; $('profile-name').textContent = 'Account locked'; $('profile-avatar').textContent = 'O'; $('profile-status').textContent = 'Private peer-to-peer messaging'; $('room-title').textContent = 'Ochat'; $('room-subtitle').textContent = 'Account locked'; $('voice-bar').hidden = true; $('leave-button').hidden = true; $('reconnect-button').hidden = true;
   for (const id of ['forget-room','new-room','new-direct-chat','join-button','settings-button','lock-button','invite-button','attach-button','emoji-button','send-button','message','voice-button','shared-emojis-button','clear-history','search-button','room-notifications-button']) $(id).disabled = true;
-  window.OchatOrganization?.reset();$('composer-status').textContent = 'Unlock your account to start.';window.OchatDiscord?.reset();
+  window.OchatOrganization?.reset();$('composer-status').textContent = 'Unlock your account to start.';$('composer-delivery-hint').hidden = true;$('composer-delivery-text').textContent = '';window.OchatDiscord?.reset();
   try { await invoke('lock_account'); } finally { accountExists = await invoke('account_status'); setAuthMode(accountExists ? 'unlock' : 'create'); show('auth-dialog'); }
 }
 
@@ -580,7 +580,10 @@ function renderComposer() {
   $('message').setAttribute('aria-label',context.room?`Message ${context.title}`:'Message');
   $('send-button').disabled = !connected || !$('message').value.trim() || !!$('send-button').dataset.busy;
   $('send-button').title = !selectedRoom ? 'Choose a friend or a room first' : !isActiveRoom() ? 'Queue this message until peers reconnect' : !state.peers.length ? 'Queue this message until a participant reconnects' : `Send to ${context.title}`;
-  const status = !selectedRoom ? 'Local draft · choose a friend or open a room to send.' : !isActiveRoom() || !state.peers.length ? 'Encrypted outbox · delivered when you and the recipient are online.' : !connected ? 'Choose a text channel to send.' : context.direct ? '' : `To everyone in ${context.title}`;
+  const queued = !!selectedRoom && (!isActiveRoom() || !state.peers.length), deliveryText = !queued ? '' : context.direct ? 'Delivered when you’re both online' : 'Delivered when members are online';
+  $('composer-delivery-hint').hidden = !queued;$('composer-delivery-hint').title = queued ? `Encrypted and queued. Delivered automatically once you and ${context.title} are online.` : '';
+  if ($('composer-delivery-text').textContent !== deliveryText) $('composer-delivery-text').textContent = deliveryText;
+  const status = !selectedRoom ? 'Local draft · choose a friend or open a room to send.' : queued ? '' : !connected ? 'Choose a text channel to send.' : context.direct ? '' : `To everyone in ${context.title}`;
   if ($('composer-status').textContent !== status) $('composer-status').textContent = status;
 }
 function normalizeLayout(value) {
