@@ -19,7 +19,7 @@
     document.body.classList.toggle('channel-navigation',modern);
     if(!modern)return;
     let home=byId('home-content'),direct=byId('home-direct-tabs');
-    if(!home){home=document.createElement('section');home.id='home-content';home.className='home-content';const heading=document.createElement('h1');heading.textContent='Friends';home.append(heading);byId('conversation-panel').prepend(home);}
+    if(!home){home=document.createElement('section');home.id='home-content';home.className='home-content';byId('conversation-panel').prepend(home);}
     if(!direct){direct=document.createElement('nav');direct.id='home-direct-tabs';direct.setAttribute('role','tablist');direct.setAttribute('aria-label','Direct messages');direct.setAttribute('aria-orientation','vertical');byId('navigation-rooms').prepend(direct);}
     relocate(byId('private-tab-category'),direct);
     const isHome=document.body.dataset.navigationSection==='friends';

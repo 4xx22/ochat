@@ -126,6 +126,15 @@ test('Tor settings distinguish a pending checkbox change from active protection'
  a.get('settings-button').click();await flush();assert.equal(a.get('tor-enabled').checked,false);assert.equal(a.get('tor-pending-change').hidden,true);
 });
 
+test('Friends groups contacts by presence, filters online and shows unread counts',async t=>{
+ const a=await setup(t);a.session(connected);const original=a.window.__TAURI__.core.invoke;a.window.__TAURI__.core.invoke=async(c,args)=>c==='list_friends'?[{peer:'away-one',name:'Quiet',status:'accepted',direct_room:null},{peer:'here-one',name:'Present',status:'accepted',direct_room:'other-room',presence_online:true,online:true}]:original(c,args);
+ a.get('friends-button').click();await flush();
+ assert.equal(a.get('friends-all-count').textContent,'2');assert.equal(a.get('friends-online-count').textContent,'1');assert.match(a.get('friends-own-id').textContent,/^.{1,8}$/);
+ const titles=()=>[...a.get('accepted-friend-list').querySelectorAll('.friend-group:not([hidden]) .friend-group-title')].map(n=>n.textContent);assert.deepEqual(titles(),['Online — 1','Offline — 1']);
+ a.window.document.querySelector('[data-friends-filter="online"]').click();assert.deepEqual(titles(),['Online — 1']);assert.equal(a.get('accepted-friend-list').querySelector('[data-peer="away-one"]').hidden,true);
+ assert.equal(a.get('accepted-friend-list').querySelector('.friend-unread'),null);await a.app.handleEvent({type:'message',room:'other-room',channel:'general',id:'unread-one',peer:'here-one',name:'Present',text:'hello',timestamp:Date.now(),emojis:[],mentions:[]});await flush();
+ assert.equal(a.get('accepted-friend-list').querySelector('[data-peer="here-one"] .friend-unread').textContent,'1 new');
+});
 test('Friends separates contacts from requests without losing actions or search',async t=>{
  const a=await setup(t);a.session(connected);const original=a.window.__TAURI__.core.invoke;a.window.__TAURI__.core.invoke=async(c,args)=>c==='list_friends'?[{peer:'peer',name:'Peer',status:'accepted',direct_room:'room'},{peer:'incoming',name:'Incoming person',status:'incoming'},{peer:'outgoing',name:'Outgoing person',status:'outgoing',request_delivered:false}]:original(c,args);
  a.get('friends-button').click();await flush();assert.equal(a.get('friends-all-count').textContent,'1');assert.equal(a.get('friends-requests-count').textContent,'2');assert.equal(a.get('accepted-friend-list').parentElement.hidden,false);assert.equal(a.get('received-friend-list').parentElement.hidden,true);assert.ok(a.get('accepted-friend-list').querySelector('.friend-more .danger'));
@@ -459,7 +468,7 @@ test('private chats identify the recipient in the header, tabs, composer and pro
   assert.equal(a.get('participants-section').hidden,true);
   a.get('peer-copy').click();await flush();assert.equal(a.calls.find(([c])=>c==='copy_text')[1].text,'peer');
   assert.equal(a.calls.some(([c])=>['call_peer','start_voice','accept_call'].includes(c)),false);
-  a.get('details-dialog').close();await flush();assert.equal(a.window.document.activeElement,a.get('conversation-identity'));
+  a.get('floating-profile-close').click();await flush();assert.equal(a.window.document.activeElement,a.get('conversation-identity'));
 });
 
 test('sender profiles distinguish identical names by identity and never interpret markup',async t=>{
@@ -513,8 +522,8 @@ test('profile voice state follows the active speaker in another conversation',as
 test('desktop private profiles open only on request and stay closed after dismissal',async t=>{
   const a=await setup(t);a.session(base);a.get('message').focus();a.input('Draft');
   Object.defineProperty(a.window,'innerWidth',{value:1600,configurable:true});a.session(connected);
-  assert.equal(a.get('details-dialog').open,false);assert.equal(a.window.document.activeElement,a.get('message'));a.get('conversation-identity').click();assert.equal(a.get('details-dialog').open,true);
-  a.get('details-dialog').close();await flush();a.app.render({...connected,peers:[{...connected.peers[0],typing:true}]});
+  assert.equal(a.get('details-dialog').open,false);assert.equal(a.window.document.activeElement,a.get('message'));a.get('conversation-identity').click();assert.equal(a.get('floating-profile').open,true);assert.equal(a.get('details-dialog').open,false);
+  a.get('floating-profile-close').click();await flush();a.app.render({...connected,peers:[{...connected.peers[0],typing:true}]});
   assert.equal(a.get('details-dialog').open,false);assert.equal(a.get('message').value,'Draft');
 });
 
@@ -734,10 +743,10 @@ test('an account without rooms can add a contact and see the delivered outgoing 
     if(command==='send_friend_request'){a.calls.push([command,args]);list=[{peer:'bob',name:'Bob',status:'outgoing',request_delivered:true}];return {peer:'bob',status:'outgoing',delivered:true};}
     if(command==='list_friends')return list;return previous(command,args);
   };
-  a.get('friends-button').click();a.get('add-friend-button').click();assert.equal(a.get('add-friend-dialog').open,true);assert.equal(a.window.document.activeElement,a.get('friend-contact-id'));
+  a.get('friends-button').click();assert.equal(a.get('send-friend-request').disabled,true);a.get('friend-contact-id').value='   ';a.get('friend-contact-id').dispatchEvent(new a.window.Event('input'));assert.equal(a.get('send-friend-request').disabled,true);a.get('friend-contact-id').value='x';a.get('friend-contact-id').dispatchEvent(new a.window.Event('input'));assert.equal(a.get('send-friend-request').disabled,false);
   a.get('friend-contact-id').value='  ochat-contact2:public-route  ';a.get('add-friend-form').dispatchEvent(new a.window.Event('submit',{cancelable:true}));await flush();await flush();
   assert.equal(a.calls.find(([c])=>c==='send_friend_request')[1].identifier,'ochat-contact2:public-route');assert.match(a.get('sent-friend-list').textContent,/Bob.*awaiting acceptance/);
-  assert.equal(a.get('add-friend-dialog').open,false);assert.equal(a.get('friend-contact-id').value,'');assert.equal(a.calls.some(([c])=>['create_room','join_room','open_direct'].includes(c)),false);
+  assert.equal(a.get('friend-contact-id').value,'');assert.equal(a.calls.some(([c])=>['create_room','join_room','open_direct'].includes(c)),false);
 });
 
 test('received and sent requests show separate delivery states and incoming actions',async t=>{
@@ -755,8 +764,8 @@ test('received and sent requests show separate delivery states and incoming acti
 test('invalid contact IDs retain an inline error and unsent requests show their saved state',async t=>{
   const a=await setup(t);a.session(base);const previous=a.window.__TAURI__.core.invoke;
   a.window.__TAURI__.core.invoke=(command,args)=>command==='send_friend_request'?Promise.reject(Error('Paste a complete contact ID')):previous(command,args);
-  a.get('add-friend-button').click();a.get('friend-contact-id').value='bad id';a.get('add-friend-form').dispatchEvent(new a.window.Event('submit',{cancelable:true}));await flush();
-  assert.equal(a.get('add-friend-dialog').open,true);assert.match(a.get('add-friend-form').querySelector('.form-error').textContent,/complete contact ID/);assert.equal(a.get('friend-contact-id').value,'bad id');
+  a.get('friend-contact-id').value='bad id';a.get('add-friend-form').dispatchEvent(new a.window.Event('submit',{cancelable:true}));await flush();
+  assert.match(a.get('add-friend-form').querySelector('.form-error').textContent,/complete contact ID/);assert.equal(a.get('friend-contact-id').value,'bad id');
   a.window.__TAURI__.core.invoke=(command,args)=>command==='send_friend_request'?Promise.resolve({peer:'bob',status:'outgoing',delivered:false}):previous(command,args);
   a.get('friend-contact-id').value='ochat-contact2:offline';a.get('add-friend-form').dispatchEvent(new a.window.Event('submit',{cancelable:true}));await flush();await flush();assert.match(a.get('toast').textContent,/saved request will retry/);
 });
@@ -765,17 +774,9 @@ test('copying a contact ID is explicit and late contact operations cannot surviv
   const a=await setup(t);a.session(base);let resolveId,resolveRequest;const previous=a.window.__TAURI__.core.invoke;
   a.window.__TAURI__.core.invoke=(command,args)=>command==='contact_id'?new Promise(resolve=>{resolveId=resolve;}):command==='send_friend_request'?new Promise(resolve=>{resolveRequest=resolve;}):previous(command,args);
   a.get('copy-contact-id').click();await flush();resolveId('ochat-contact2:public-route');await flush();assert.equal(a.calls.find(([c])=>c==='copy_text')[1].text,'ochat-contact2:public-route');
-  a.get('copy-contact-id').click();a.get('add-friend-button').click();a.get('friend-contact-id').value='ochat-contact2:private-route';a.get('add-friend-form').dispatchEvent(new a.window.Event('submit',{cancelable:true}));await flush();
+  a.get('copy-contact-id').click();a.get('friend-contact-id').value='ochat-contact2:private-route';a.get('add-friend-form').dispatchEvent(new a.window.Event('submit',{cancelable:true}));await flush();
   await a.app.lockAccount();resolveId('ochat-contact2:late');resolveRequest({peer:'bob',status:'outgoing',delivered:true});await flush();await flush();
-  assert.equal(a.calls.filter(([c])=>c==='copy_text').length,1);assert.equal(a.get('friend-contact-id').value,'');assert.equal(a.get('add-friend-dialog').open,false);assert.equal(a.get('friend-list').textContent,'');assert.equal(a.get('copy-contact-id').disabled,true);assert.equal(a.get('copy-contact-id').textContent,'Copy my contact ID');assert.equal(a.get('auth-dialog').open,true);
-});
-
-test('a pending request does not reopen navigation after the user closes its dialog',async t=>{
-  const a=await setup(t);Object.defineProperty(a.window,'innerWidth',{value:480,configurable:true});a.session(base);let resolveRequest;const previous=a.window.__TAURI__.core.invoke;
-  a.window.__TAURI__.core.invoke=(command,args)=>command==='send_friend_request'?new Promise(resolve=>{resolveRequest=resolve;}):previous(command,args);
-  a.get('friends-button').click();a.get('add-friend-button').click();a.get('friend-contact-id').value='ochat-contact2:pending';a.get('add-friend-form').dispatchEvent(new a.window.Event('submit',{cancelable:true}));await flush();
-  a.get('add-friend-dialog').close();resolveRequest({peer:'bob',status:'outgoing',delivered:true});await flush();await flush();
-  assert.equal(a.get('navigation-dialog').open,false);assert.equal(a.get('add-friend-dialog').open,false);
+  assert.equal(a.calls.filter(([c])=>c==='copy_text').length,1);assert.equal(a.get('friend-contact-id').value,'');assert.equal(a.get('friend-list').textContent,'');assert.equal(a.get('copy-contact-id').disabled,true);assert.equal(a.get('copy-contact-id').textContent,'Copy');assert.equal(a.get('friends-own-id').textContent,'');assert.equal(a.get('send-friend-request').disabled,true);assert.equal(a.get('auth-dialog').open,true);
 });
 
 test('Studio groups messages by identity and time while retaining author context',async t=>{
@@ -837,9 +838,9 @@ test('shared gallery filters file offers, images and safe links without loading 
 });
 
 test('identity verification requires an explicit comparison and carries the exact fingerprint',async t=>{
- const a=await setup(t);a.session(connected);const previous=a.window.__TAURI__.core.invoke;a.window.__TAURI__.core.invoke=async(c,args)=>c==='peer_verification'?{peer:args.peer,fingerprint:'ABCD 1234',verified:false,same_name_verified:true}:previous(c,args);
- a.get('conversation-identity').click();await flush();a.get('verify-peer-button').click();await flush();assert.equal(a.get('verification-dialog').open,true);assert.equal(a.get('verification-fingerprint').textContent,'ABCD 1234');assert.match(a.get('verification-status').textContent,/different verified identity/);assert.equal(a.calls.some(([c])=>c==='verify_identity'),false);
- a.get('confirm-verification').click();await flush();assert.ok(a.calls.some(([c,args])=>c==='verify_identity'&&args.peer==='peer'&&args.fingerprint==='ABCD 1234'&&args.verified===true));await a.app.lockAccount();assert.equal(a.get('verification-fingerprint').textContent,'');
+ const a=await setup(t);const previous=a.window.__TAURI__.core.invoke;a.window.__TAURI__.core.invoke=async(c,args)=>c==='peer_verification'?{peer:args.peer,fingerprint:'ABCD 1234',verified:false,same_name_verified:true}:previous(c,args);a.session(connected);
+ a.get('conversation-identity').click();await flush();assert.equal(a.get('peer-verification').hidden,false);assert.equal(a.get('verification-fingerprint').textContent,'ABCD 1234');assert.equal(a.get('verification-fingerprint').querySelectorAll('span').length,2);assert.match(a.get('verification-hint').textContent,/different verified identity/);assert.equal(a.calls.some(([c])=>c==='verify_identity'),false);a.get('toggle-fingerprint').click();assert.equal(a.get('verification-fingerprint').hidden,true);assert.equal(a.get('confirm-verification').hidden,true);a.get('toggle-fingerprint').click();assert.equal(a.get('confirm-verification').hidden,false);
+ a.get('confirm-verification').click();await flush();assert.ok(a.calls.some(([c,args])=>c==='verify_identity'&&args.peer==='peer'&&args.fingerprint==='ABCD 1234'&&args.verified===true));await flush();assert.equal(a.get('peer-verification-status').textContent,'Identity verified');assert.equal(a.get('verification-fingerprint').hidden,true);assert.equal(a.get('remove-verification').hidden,false);await a.app.lockAccount();assert.equal(a.get('verification-fingerprint').textContent,'');assert.equal(a.get('peer-verification').hidden,true);
 });
 test('voice diagnostics reports native devices and latency without opening capture',async t=>{
  const a=await setup(t);a.session({...connected,voice:true});const previous=a.window.__TAURI__.core.invoke;a.window.__TAURI__.core.invoke=async(c,args)=>c==='voice_diagnostics'?{snapshot:{...connected,voice:true,muted:true,peers:[{id:'peer',name:'Peer',voice:true,route:'direct',latency_ms:300}]},audio:settings.audio,level:0.25}:c==='audio_devices'?[{id:'mic',name:'Studio microphone',input:true,is_default:true},{id:'out',name:'Headphones',input:false,is_default:true}]:previous(c,args);
@@ -921,7 +922,7 @@ test('a failed Friends refresh after Lock does not display private connection er
 test('a failed resend is not presented as successful because of an older receipt',async t=>{
   const a=await setup(t);a.session(connected);const previous=a.window.__TAURI__.core.invoke;
   a.window.__TAURI__.core.invoke=(command,args)=>command==='send_friend_request'?Promise.resolve({peer:'remote',status:'outgoing',delivered:true,request_error:'Connection timed out'}):command==='list_friends'?Promise.resolve([{peer:'remote',name:'Remote',status:'outgoing',request_delivered:true,request_error:'Connection timed out'}]):previous(command,args);
-  a.get('add-friend-button').click();a.get('friend-contact-id').value='ochat-contact2:public-contact';a.get('add-friend-form').dispatchEvent(new a.window.Event('submit',{cancelable:true}));await flush();assert.match(a.get('toast').textContent,/Contact not reachable yet/);assert.match(a.get('sent-friend-list').textContent,/Connection timed out/);
+  a.get('friend-contact-id').value='ochat-contact2:public-contact';a.get('add-friend-form').dispatchEvent(new a.window.Event('submit',{cancelable:true}));await flush();assert.match(a.get('toast').textContent,/Contact not reachable yet/);assert.match(a.get('sent-friend-list').textContent,/Connection timed out/);
 });
 
 test('voice badges show remote voice activity without joining and disappear when voice ends',async t=>{
@@ -1226,7 +1227,7 @@ test('pasting an image sends it without changing the text draft',async t=>{
  const text=new a.window.Event('paste',{bubbles:true,cancelable:true});Object.defineProperty(text,'clipboardData',{value:{items:[],types:['text/plain']}});a.get('message').dispatchEvent(text);assert.equal(text.defaultPrevented,false);
 });
 test('profile cards show bios, open a large photo and clear private labels on Lock',async t=>{
- const a=await setup(t),data='data:image/png;base64,AAAA';const previous=a.window.__TAURI__.core.invoke;a.window.__TAURI__.core.invoke=async(command,args)=>command==='emoji_asset'?data:previous(command,args);a.session({...connected,peers:[{...connected.peers[0],name:'PrivateProfile',bio:'PRIVATE BIO',avatar_hash:'a'.repeat(64)}]});a.get('conversation-identity').click();await flush();assert.equal(a.get('details-dialog').classList.contains('profile-overlay'),true);assert.equal(a.get('peer-bio').textContent,'PRIVATE BIO');a.get('peer-avatar').click();assert.equal(a.get('profile-photo-dialog').open,true);assert.equal(a.get('photo-viewer-image').getAttribute('src'),data);await a.app.lockAccount();assert.equal(a.window.document.body.innerHTML.includes('PRIVATE BIO'),false);assert.equal(a.window.document.body.innerHTML.includes('PrivateProfile'),false);assert.equal(a.get('photo-viewer-image').getAttribute('src'),null);
+ const a=await setup(t),data='data:image/png;base64,AAAA';const previous=a.window.__TAURI__.core.invoke;a.window.__TAURI__.core.invoke=async(command,args)=>command==='emoji_asset'?data:previous(command,args);a.session({...connected,peers:[{...connected.peers[0],name:'PrivateProfile',bio:'PRIVATE BIO',avatar_hash:'a'.repeat(64)}]});a.get('conversation-identity').click();await flush();assert.equal(a.get('floating-profile').open,true);assert.equal(a.get('peer-bio').textContent,'PRIVATE BIO');a.get('peer-avatar').click();assert.equal(a.get('profile-photo-dialog').open,true);assert.equal(a.get('photo-viewer-image').getAttribute('src'),data);await a.app.lockAccount();assert.equal(a.window.document.body.innerHTML.includes('PRIVATE BIO'),false);assert.equal(a.window.document.body.innerHTML.includes('PrivateProfile'),false);assert.equal(a.get('photo-viewer-image').getAttribute('src'),null);
 });
 test('custom appearance previews cancel and Tor changes relock the account',async t=>{
  const a=await setup(t);a.session(connected);a.get('settings-button').click();await flush();a.get('appearance-background-color-enabled').checked=true;a.get('appearance-background-color').value='#ffffff';a.get('appearance-background-color').dispatchEvent(new a.window.Event('input'));await new Promise(resolve=>a.window.requestAnimationFrame(resolve));assert.equal(a.window.document.documentElement.style.getPropertyValue('--custom-bg'),'#FFFFFF');a.get('settings-cancel').click();assert.equal(a.window.document.documentElement.style.getPropertyValue('--custom-bg'),'');

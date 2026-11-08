@@ -24,6 +24,7 @@ let emojiEntries = [], editingEmoji = null, recoveryRequired = false, accountExi
 let creatingDirect = false;
 let friends = [], friendGeneration = 0;
 const friendRetries = new Set();
+let friendRequestPending = false;
 let toastTimer, typingTimer, typingPulse, audioPoll, confirmCallback, cursor = [0, 0];
 let historyTimeline=null,imageRequestToken=null;
 let membersKey = '', roomsKey = '', loadedRoom = null, historyGeneration = 0, sessionGeneration = 0, assetGeneration = 0;
@@ -139,41 +140,48 @@ function renderIdentity(room) {
   $('room-actions-name').textContent=room?context.title:'';
 }
 function clearPeerCard() {
-  $('peer-card').hidden=true;$('profile-back').hidden=true;
-  for(const key of ['avatarHash','avatarName','avatarPeer'])delete $('peer-avatar').dataset[key];
+  $('peer-card').hidden=true;$('peer-verification').hidden=true;verificationTarget=null;
+  for(const key of ['avatarHash','avatarName','avatarPeer','tone'])delete $('peer-avatar').dataset[key];
   delete $('peer-voice').dataset.speaking;
   for(const id of ['peer-avatar','peer-name','peer-presence','peer-connection','peer-voice','peer-relationship','peer-identity'])$(id).textContent='';
   for(const id of ['peer-message','peer-add','peer-copy'])$(id).onclick=null;
+}
+function renderPeerVerification(person,self) {
+  const data=verificationCache.get(person.id),ready=!self&&!!data?.fingerprint;
+  $('peer-verification').hidden=!ready;if(!ready){verificationTarget=null;return;}
+  if(verificationTarget?.peer!==data.peer)fingerprintOpen=!data.verified;
+  verificationTarget=data;$('peer-verification').dataset.state=data.verified?'verified':data.same_name_verified?'conflict':'unverified';
+  $('peer-verification-status').textContent=data.verified?'Identity verified':data.same_name_verified?'Different identity with a familiar name':'Identity not verified';
+  $('verification-hint').textContent=data.verified?`You confirmed this fingerprint with ${person.name} on this device.`:data.same_name_verified?`A different verified identity uses the name ${person.name}. Compare this fingerprint separately before trusting it.`:`Read this fingerprint out loud with ${person.name}, in person or over a call. If every group matches, you're talking to the right person.`;
+  const code=$('verification-fingerprint'),groups=data.fingerprint.split(/\s+/);
+  if(code.textContent!==groups.join(' ')){code.replaceChildren();groups.forEach((group,index)=>{if(index)code.append(' ');code.append(el('span','',group));});}
+  code.hidden=!fingerprintOpen;$('copy-fingerprint').hidden=!fingerprintOpen;$('confirm-verification').hidden=data.verified||!fingerprintOpen;$('remove-verification').hidden=!data.verified;
+  $('toggle-fingerprint').textContent=fingerprintOpen?'Hide fingerprint':'Show fingerprint';
 }
 function renderPeerCard() {
   if(!unlocked || !state)return;
   if(inspectedRoom!==selectedRoom){window.OchatProfiles?.close(false);inspectedPeer=null;inspectedRoom=selectedRoom;}
   const context=conversationContext(selectedRoom),target=inspectedPeer || context.peer;
   const person=target ? peerDetails(target.id,target.room || selectedRoom,target.name) : null;
-  const floating=!!inspectedPeer?.floating;const focusedMember=!floating && !!inspectedPeer && (!context.direct || context.peer?.id!==person?.id);
-  $('details-title').textContent=person&&!floating?'Profile':context.direct?'Private chat':'Group details';
-  $('profile-back').hidden=!focusedMember || !context.room;
-  $('profile-back').textContent=context.direct?'← Back to chat profile':'← Back to members';
-  $('details-overview').hidden=focusedMember;
+  $('details-title').textContent=person&&!inspectedPeer?'Profile':context.direct?'Private chat':'Group details';
   $('participants-section').hidden=!!context.direct && !!context.peer;
   $('peer-card').hidden=!person;
   if(!person){clearPeerCard();return;}
   const self=person.id===state.id,friend=friends.find(friend=>friend.peer===person.id);
-  profileAvatar($('peer-avatar'),person.name,person.avatar_hash,person.id);
+  profileAvatar($('peer-avatar'),person.name,person.avatar_hash,person.id);$('peer-avatar').dataset.tone=friendTone(person.id);
   $('peer-name').textContent=person.name;window.OchatPersonalization?.profile(person);window.OchatCommunity?.badge($('peer-name'),person);
   $('peer-presence').textContent=person.online?({away:'Away',busy:'Do not disturb'})[person.availability]||'Online':'Offline';
   $('peer-presence').classList.toggle('online',person.online);
   const route=self?'self':!person.online?'offline':person.route==='direct'?'direct':person.route==='relay'?'relay':'unknown';
   const connection=$('peer-connection');connection.dataset.route=route;connection.textContent=route==='self'?'This device':route==='offline'?'Disconnected':route==='direct'?'Direct':route==='relay'?'Relayed':'Connected · route unavailable';
-  if(!self && person.online && Number.isFinite(person.latency_ms) && person.latency_ms>0)connection.textContent+=' · '+Math.round(person.latency_ms)+' ms';
+  if(!self && person.online && Number.isFinite(person.latency_ms) && person.latency_ms>0)connection.append(el('span','peer-latency',' · '+Math.round(person.latency_ms)+' ms'));
   connection.title=route==='relay'&&settings?.tor_enabled?'Encrypted connection through Tor on this device and an Iroh relay':person.online&&!self?'Current encrypted connection from this device to this peer':route==='offline'?'No active connection to this peer':'This is your local account';
   $('peer-voice').textContent=person.voice&&person.deafened?'Deafened':person.voice&&person.muted?'Microphone muted':person.speaking?'Speaking now':person.voice?'In a voice chat':'Not in voice';
   $('peer-voice').dataset.speaking=String(person.speaking); window.OchatFeatures?.profile(person);
-  $('peer-relationship').textContent=self?'You':friend?.status==='accepted'?'Friend':friend?.status==='incoming'?'Sent you a friend request':friend?.status==='outgoing'?'Your request is pending':'Not in your friends';
+  $('peer-relationship').dataset.kind=self?'self':friend?.status||'none';$('peer-relationship').textContent=self?'You':friend?.status==='accepted'?'Friend':friend?.status==='incoming'?'Sent you a friend request':friend?.status==='outgoing'?'Your request is pending':'Not in your friends';
   $('peer-identity').textContent=person.id;
-  $('verify-peer-button').hidden=self;
-  const verified=verificationCache.get(person.id);$('peer-verification-status').textContent=self?'This is your identity':verified?.verified?'Verified identity':'Identity not verified';
-  if(!self && !verificationCache.has(person.id)){verificationCache.set(person.id,{loading:true});const generation=sessionGeneration;invoke('peer_verification',{peer:person.id}).then(data=>{if(unlocked && generation===sessionGeneration){verificationCache.set(person.id,data);if($('peer-identity').textContent===person.id)$('peer-verification-status').textContent=data?.verified?'Verified identity':data?.same_name_verified?'Different identity with a familiar name — compare again.':'Identity not verified';}}).catch(()=>verificationCache.delete(person.id));}
+  renderPeerVerification(person,self);
+  const cachedVerification=verificationCache.get(person.id);if(!self && !cachedVerification?.fingerprint && !cachedVerification?.loading){verificationCache.set(person.id,{loading:true});const generation=sessionGeneration;invoke('peer_verification',{peer:person.id}).then(data=>{if(unlocked && generation===sessionGeneration){verificationCache.set(person.id,data);if($('peer-identity').textContent===person.id)renderPeerVerification(person,false);}}).catch(()=>verificationCache.delete(person.id));}
 
   $('peer-copy').onclick=()=>action($('peer-copy'),async()=>{await invoke('copy_text',{text:person.id});toast('Public identity copied.');});
   const message=$('peer-message'),add=$('peer-add');
@@ -188,15 +196,8 @@ function renderPeerCard() {
 }
 function showPeer(id,name,room=selectedRoom,opener=document.activeElement) {
   if(!unlocked)return;
-  const floating=!!conversationContext(room).room && !conversationContext(room).direct;
-  if(!floating)window.OchatProfiles?.close(false);
-  inspectedPeer={id,name,room,floating};inspectedRoom=selectedRoom;
-  if(floating){releaseTalk();renderPeerCard();window.OchatProfiles?.open(opener);return;}
-  restoreDetailsOnWide=false;const origin=document.activeElement,returnFocus=$('navigation-dialog').contains(origin) && navigationModal?(panelOpeners.get('navigation-dialog') || $('navigation-toggle')):origin,dialog=$('details-dialog');renderPeerCard();
-  releaseTalk();prepareDialog(dialog.id);panelOpeners.set(dialog.id,returnFocus);
-  detailsModal=true;dialog.classList.add('profile-overlay');
-  if(dialog.open)dialog.close();dialog.showModal();
-  $('details-toggle').setAttribute('aria-expanded','true');dialog.scrollTop=0;
+  verificationTarget=null;inspectedPeer={id,name,room};inspectedRoom=selectedRoom;
+  releaseTalk();renderPeerCard();window.OchatProfiles?.open(opener);
 }
 async function refreshFriends() {
   const generation=++friendGeneration,session=sessionGeneration,result=await invoke('list_friends');
@@ -222,33 +223,45 @@ async function retryFriendRequest(friend,button) {
     toast(result.status!=='outgoing'?'This request is no longer pending.':result.request_error?'The contact is still unreachable. Open Connection details for the last error.':result.delivered?'Request delivered. Waiting for your friend to accept.':'Request queued. Keep both accounts unlocked; Ochat will retry automatically.');
   });}finally{if(unlocked && generation===sessionGeneration){friendRetries.delete(friend.peer);friendsRenderKey='';renderFriends();}}
 }
+function friendTone(peer) {let hash=2166136261;for(const char of peer)hash=Math.imul(hash^char.charCodeAt(0),16777619);return String(hash>>>29);}
+function renderFriendUnread() {
+  for(const row of $('friend-list').querySelectorAll('#accepted-friend-list .friend-row')){
+    const count=unread.get(row.dataset.room)||0;let badge=row.querySelector('.friend-unread');
+    if(!count){badge?.remove();continue;}
+    if(!badge){badge=el('span','friend-unread');row.querySelector('.friend-name').append(badge);}
+    badge.textContent=`${count} new`;
+  }
+}
 function renderFriends() {
   window.OchatProductivity?.sync();
-  const key=JSON.stringify([friends,[state,...roomSnapshots.values()].flatMap(s=>s?.peers?.map(p=>[p.id,p.name,p.avatar_hash,p.tor_enabled,p.online])||[])]);if(key===friendsRenderKey)return;friendsRenderKey=key;
+  const key=JSON.stringify([friends,[state,...roomSnapshots.values()].flatMap(s=>s?.peers?.map(p=>[p.id,p.name,p.avatar_hash,p.tor_enabled,p.online,p.availability])||[])]);if(key===friendsRenderKey)return;friendsRenderKey=key;
   const incoming=friends.filter(f=>f.status==='incoming'),outgoing=friends.filter(f=>f.status==='outgoing'),accepted=friends.filter(f=>f.status==='accepted');
   const label=`Friends${incoming.length?' ('+incoming.length+')':''}`;$('friends-button').textContent=label;$('navigation-friends-button').textContent=label;
   const container=$('friend-list');container.replaceChildren();
   for(const [id,title,entries,empty] of [['received-friend-list','Received requests',incoming,'No received requests.'],['sent-friend-list','Sent requests',outgoing,'No sent requests.'],['accepted-friend-list','Friends',accepted,'Add a friend using their contact ID.']]){
     const section=el('section','friend-section'),heading=el('h3','',title),count=el('span','',String(entries.length)),list=el('div','');list.id=id;heading.append(count);section.append(heading,list);container.append(section);
+    const group=label=>{const node=el('div','friend-group');node.dataset.label=label;node.append(el('h3','friend-group-title'));return node;},onlineGroup=group('Online'),offlineGroup=group('Offline');
     for(const friend of entries){
-      const person=peerDetails(friend.peer,friend.direct_room,friend.name),online=person.online,row=el('div','friend-row'),profile=el('button','friend-heading'),avatar=el('span','avatar'),dot=el('span',`presence-dot ${online?'online':'offline'}`);
-      row.dataset.peer=friend.peer;row.dataset.search=(person.name+' '+friend.peer).toLocaleLowerCase();profile.type='button';profile.setAttribute('aria-label',`View ${person.name}'s profile`);profile.onclick=()=>showPeer(friend.peer,person.name,friend.direct_room);profileAvatar(avatar,person.name,person.avatar_hash,person.id);dot.setAttribute('role','img');dot.setAttribute('aria-label',online?'Online':'Offline');avatar.append(dot);profile.append(avatar,el('strong','',person.name));window.OchatCommunity?.badge(profile,person);row.append(profile);
+      const person=peerDetails(friend.peer,friend.direct_room,friend.name),online=person.online&&person.availability!=='invisible',row=el('div','friend-row'),profile=el('button','friend-heading'),avatar=el('span','avatar'),dot=el('span',`presence-dot ${online?'online':'offline'}`),details=el('span','friend-details'),name=el('span','friend-name');
+      row.dataset.peer=friend.peer;row.dataset.online=String(online);if(friend.direct_room)row.dataset.room=friend.direct_room;row.dataset.search=(person.name+' '+friend.peer).toLocaleLowerCase();profile.type='button';profile.title='View profile';profile.onclick=()=>showPeer(friend.peer,person.name,friend.direct_room,profile);profileAvatar(avatar,person.name,person.avatar_hash,person.id);avatar.dataset.tone=friendTone(friend.peer);avatar.setAttribute('aria-hidden','true');dot.setAttribute('role','img');dot.setAttribute('aria-label',online?'Online':'Offline');avatar.append(dot);name.append(el('strong','',person.name));window.OchatCommunity?.badge(name,person);details.append(name);profile.append(avatar,details);row.append(profile);
       if(friend.status==='accepted'){
-        row.append(el('small','friend-presence',online?'Online':'Offline'));
-        const controls=el('div','friend-controls'),message=el('button','text-button','Message'),remove=el('button','text-button danger','Remove');message.onclick=()=>action(message,()=>messageFriend(friend));remove.onclick=()=>confirm('Remove friend?',`Remove ${friend.name} from your friends? Saved messages remain on this device.`,'Remove',async()=>{await invoke('respond_friend',{peer:friend.peer,accept:false});await refreshFriends();});controls.append(message,remove);row.append(controls);
+        details.append(el('small','friend-presence',online?'Online':'Offline'));
+        const controls=el('div','friend-controls'),message=el('button','text-button friend-message','Message'),remove=el('button','text-button danger','Remove');message.type='button';message.title='Message';message.setAttribute('aria-label',`Message ${person.name}`);message.onclick=()=>action(message,()=>messageFriend(friend));remove.onclick=()=>confirm('Remove friend?',`Remove ${friend.name} from your friends? Saved messages remain on this device.`,'Remove',async()=>{await invoke('respond_friend',{peer:friend.peer,accept:false});await refreshFriends();});controls.append(message,remove);row.append(controls);
       }else if(friend.status==='incoming'){
-        row.append(el('small','','Wants to add you'));const controls=el('div','friend-controls');for(const accept of [true,false]){const button=el('button','text-button',accept?'Accept':'Decline');button.type='button';button.onclick=()=>action(button,async()=>{await invoke('respond_friend',{peer:friend.peer,accept});await refreshFriends();});controls.append(button);}row.append(controls);
+        details.append(el('small','','Wants to add you'));const controls=el('div','friend-controls');for(const accept of [true,false]){const button=el('button','text-button',accept?'Accept':'Decline');button.type='button';button.onclick=()=>action(button,async()=>{await invoke('respond_friend',{peer:friend.peer,accept});await refreshFriends();});controls.append(button);}row.append(controls);
       }else {
-        row.append(el('small','request-status',friend.request_delivered?'Request sent · awaiting acceptance':'Waiting to reach this contact'));
+        details.append(el('small','request-status',friend.request_delivered?'Request sent · awaiting acceptance':'Waiting to reach this contact'));
         const controls=el('div','friend-controls'),retry=el('button','text-button',friendRetries.has(friend.peer)?'Retrying…':'Retry');retry.type='button';retry.disabled=friendRetries.has(friend.peer);retry.setAttribute('aria-label',`Retry friend request to ${person.name}`);retry.onclick=()=>retryFriendRequest(friend,retry);controls.append(retry);row.append(controls);
         if(!friend.request_delivered)row.append(el('small','request-help','Keep both accounts unlocked. If needed, add this contact again using a freshly copied contact ID.'));
         if(friend.request_error){const details=el('details','request-error'),summary=el('summary','','Connection details');details.append(summary,el('p','',friend.request_error));row.append(details);}
       }
-      const identity=el('small','friend-identity',friend.peer.slice(0,8));identity.title=friend.peer;row.append(identity);list.append(row);
+      const identity=el('small','friend-identity',friend.peer.slice(0,8));identity.title=friend.peer;row.append(identity);(friend.status!=='accepted'?list:online?onlineGroup:offlineGroup).append(row);
     }
+    if(id==='accepted-friend-list'&&entries.length)list.append(onlineGroup,offlineGroup);
     if(!entries.length)list.append(el('p','empty-small',empty));
   }
   window.OchatCommunity?.friends({accepted:accepted.length,incoming:incoming.length,outgoing:outgoing.length});
+  renderFriendUnread();
 }
 function beginReply(event) {replyDrafts.set(draftKey(),event);renderReply();$('message').focus();}
 function renderReply() {
@@ -373,7 +386,6 @@ function prepareDialog(id) {
   if(id!=='details-dialog' && window.innerWidth<1180)closePanel('details-dialog',false);
 }
 function openDetails() {
-  $('details-dialog').classList.remove('profile-overlay');
   restoreDetailsOnWide=false;const dialog=$('details-dialog');if(dialog.open){closePanel(dialog.id);return;}
   inspectedPeer=null;inspectedRoom=selectedRoom;renderPeerCard();
   releaseTalk();prepareDialog(dialog.id);panelOpeners.set(dialog.id,$('details-toggle'));detailsModal=window.innerWidth<1180;
@@ -471,7 +483,7 @@ async function lockAccount() {
   panelOpeners.clear();dialogReturnFocus.clear();introducedProfiles.clear();
   inspectedPeer=null;inspectedRoom=null;clearPeerCard();$('room-illustration-section').hidden=true;$('illustration-name').textContent='';$('conversation-avatar').textContent='O';delete $('room-subtitle').dataset.presence;$('conversation-identity').disabled=true;$('conversation-kind').textContent='Your conversations';$('room-actions-name').textContent='';$('connection-summary').textContent='';
   $('conversation-identity').setAttribute('aria-label','View conversation details');$('room-title').removeAttribute('title');$('message').setAttribute('aria-label','Message');$('message').placeholder='Write a draft…';$('send-button').title='Send message';$('voice-button').title='Join voice';delete $('peer-voice').dataset.speaking;
-  releaseTalk();$('settings-button').disabled=true;$('navigation-toggle').disabled=true;$('friends-button').disabled=true;$('add-friend-button').disabled=true;$('copy-contact-id').disabled=true;$('copy-contact-id').textContent='Copy my contact ID';$('friends-button').textContent='Friends';$('room-voice-roster').replaceChildren();$('room-voice-elapsed').textContent='00:00';$('voice-label').textContent='Voice connected';$('voice-hint').textContent='';$('voice-elapsed').textContent='00:00';$('conversation-panel').removeAttribute('aria-labelledby');membersKey='';roomsKey='';friendsRenderKey='';lastTabSelection=null;$('private-conversation-tabs').replaceChildren();$('room-conversation-tabs').replaceChildren();$('private-tab-count').textContent='0';$('room-tab-count').textContent='0';$('details-toggle').disabled=true;$('room-actions-toggle').disabled=true;$('lock-button').disabled=true;friends=[];friendRetries.clear();friendGeneration++;$('friend-list').replaceChildren();$('talk-button').hidden=true;$('reconnect-panel').hidden=true;searchGeneration++;replyDrafts.clear();messageCache.clear();searchRoom=null;notificationRoom=null;$('search-results').replaceChildren();$('search-query').value='';$('search-status').textContent='';$('room-notifications-name').textContent='';renderReply();
+  releaseTalk();$('settings-button').disabled=true;$('navigation-toggle').disabled=true;$('friends-button').disabled=true;friendRequestPending=false;$('send-friend-request').disabled=true;$('friends-own-id').textContent='';$('friends-own-id').removeAttribute('title');$('copy-contact-id').disabled=true;$('copy-contact-id').textContent='Copy';$('friends-button').textContent='Friends';$('room-voice-roster').replaceChildren();$('room-voice-elapsed').textContent='00:00';$('voice-label').textContent='Voice connected';$('voice-hint').textContent='';$('voice-elapsed').textContent='00:00';$('conversation-panel').removeAttribute('aria-labelledby');membersKey='';roomsKey='';friendsRenderKey='';lastTabSelection=null;$('private-conversation-tabs').replaceChildren();$('room-conversation-tabs').replaceChildren();$('private-tab-count').textContent='0';$('room-tab-count').textContent='0';$('details-toggle').disabled=true;$('room-actions-toggle').disabled=true;$('lock-button').disabled=true;friends=[];friendRetries.clear();friendGeneration++;$('friend-list').replaceChildren();$('talk-button').hidden=true;$('reconnect-panel').hidden=true;searchGeneration++;replyDrafts.clear();messageCache.clear();searchRoom=null;notificationRoom=null;$('search-results').replaceChildren();$('search-query').value='';$('search-status').textContent='';$('room-notifications-name').textContent='';renderReply();
   historyLoading=false;$('history-context').hidden=true;
   clearTimeout(readTimer);clearTimeout(viewTimer);readTimer=null;readMarkers.clear();selectedMentions.clear();closeMentions();
   window.OchatWorkspace?.reset();
@@ -495,7 +507,7 @@ function render(next) {
   if (!unlocked || !state) return;
   const room = rooms.find(r => r.id === selectedRoom) || (state.room?.id === selectedRoom ? state.room : null);
   $('activity-button').disabled=false;
-  $('settings-button').disabled=false;$('navigation-toggle').disabled=false;$('friends-button').disabled=false;$('add-friend-button').disabled=false;$('copy-contact-id').disabled=!!$('copy-contact-id').dataset.busy;$('lock-button').disabled=false;$('details-toggle').disabled=!selectedRoom;$('room-actions-toggle').disabled=!selectedRoom; $('profile-name').textContent = state.name; profileAvatar($('profile-avatar'),state.name,state.avatar_hash,state.id); $('profile-status').textContent = 'Your account';
+  $('settings-button').disabled=false;$('navigation-toggle').disabled=false;$('friends-button').disabled=false;syncFriendRequest();$('friends-own-id').textContent=state.id.slice(0,8);$('friends-own-id').title=state.id;$('copy-contact-id').disabled=!!$('copy-contact-id').dataset.busy;$('lock-button').disabled=false;$('details-toggle').disabled=!selectedRoom;$('room-actions-toggle').disabled=!selectedRoom; $('profile-name').textContent = state.name; profileAvatar($('profile-avatar'),state.name,state.avatar_hash,state.id); $('profile-status').textContent = 'Your account';
   renderIdentity(room);
   for (const id of ['new-room','new-direct-chat','join-button','settings-button','lock-button','emoji-button']) $(id).disabled = false;
   $('invite-button').disabled = !isActiveRoom() || !!$('invite-button').dataset.busy;
@@ -680,6 +692,7 @@ function syncTaskbarUnread() {
 }
 function renderRooms() {
   syncTaskbarUnread();
+  renderFriendUnread();
   window.OchatPersonalization?.badge();
   const focused=document.activeElement,restoreFocus=$('conversation-tabs').contains(focused);
   const all=allRooms();
@@ -1076,24 +1089,24 @@ function openNavigation(opener=$('navigation-toggle')) {
   if(!dialog.open){panelOpeners.set(dialog.id,opener);navigationModal=true;show(dialog.id);$('navigation-toggle').setAttribute('aria-expanded','true');}
 }
 $('navigation-toggle').onclick=()=>{if($('navigation-dialog').open && navigationModal){closePanel('navigation-dialog');return;}setNavigationSection('rooms');openNavigation();};
-$('add-friend-button').onclick=()=>{if(!unlocked)return;$('friend-contact-id').value='';show('add-friend-dialog');$('friend-contact-id').focus();};
 $('copy-contact-id').onclick=()=>action($('copy-contact-id'),async()=>{
-  const generation=sessionGeneration,label=$('copy-contact-id').textContent;$('copy-contact-id').textContent='Preparing contact ID…';
+  const generation=sessionGeneration,label=$('copy-contact-id').textContent;$('copy-contact-id').textContent='Copying…';
   try{let identifier;try{identifier=await invoke('contact_id');}catch(error){if(unlocked && generation===sessionGeneration)throw error;return;}if(!unlocked || generation!==sessionGeneration)return;await invoke('copy_text',{text:identifier});if(unlocked && generation===sessionGeneration)toast('Contact ID copied. Share it with the person you want to add.');}
   finally{if(generation===sessionGeneration)$('copy-contact-id').textContent=label;}
 }).finally(()=>{if(!unlocked)$('copy-contact-id').disabled=true;});
-$('add-friend-form').onsubmit=event=>{event.preventDefault();formAction(event.currentTarget,async()=>{
-  const generation=sessionGeneration,identifier=$('friend-contact-id').value.trim();if(!identifier)throw Error('Paste your friend’s contact ID.');
+function syncFriendRequest() {$('send-friend-request').disabled=!unlocked||friendRequestPending||!$('friend-contact-id').value.trim();}
+$('friend-contact-id').oninput=syncFriendRequest;
+$('add-friend-form').onsubmit=event=>{event.preventDefault();syncFriendRequest();if($('send-friend-request').disabled)return;friendRequestPending=true;formAction(event.currentTarget,async()=>{
+  const generation=sessionGeneration,identifier=$('friend-contact-id').value.trim();
   let result;try{result=await invoke('send_friend_request',{identifier});}catch(error){if(unlocked && generation===sessionGeneration)throw error;return;}if(!unlocked || generation!==sessionGeneration)return;
   await refreshFriends();if(!unlocked || generation!==sessionGeneration)return;
-  $('friend-contact-id').value='';if($('add-friend-dialog').open){$('add-friend-dialog').close();setNavigationSection('friends');openNavigation($('friends-button'));}
+  $('friend-contact-id').value='';
   toast(result.status==='accepted'?'You are friends. Choose Message to start a private conversation.':result.status==='blocked'?'This request was dismissed. It will not be retried automatically.':(result.delivered && !result.request_error)?'Request sent. You can follow it in Sent requests.':'Contact not reachable yet. The saved request will retry while Ochat is unlocked. See Sent requests → Connection details or use Retry.');
-});};
+}).finally(()=>{friendRequestPending=false;syncFriendRequest();});};
 $('friends-button').onclick=()=>{refreshFriendsFromNavigation();setNavigationSection('friends');openNavigation($('friends-button'));$('navigation-friends-button').focus({preventScroll:true});};
 for(const section of ['rooms','friends'])$(`navigation-${section}-button`).onclick=()=>{setNavigationSection(section);if(section==='friends')refreshFriendsFromNavigation();};
 $('details-toggle').onclick=openDetails;
-$('conversation-identity').onclick=()=>{const context=conversationContext(selectedRoom);if(context.peer)showPeer(context.peer.id,context.peer.name);else if(!$('details-dialog').open)openDetails();else {inspectedPeer=null;renderPeerCard();}};
-$('profile-back').onclick=()=>{window.OchatProfiles?.close();inspectedPeer=null;renderPeerCard();$('details-dialog').scrollTop=0;const target=$('members').querySelector('.member-profile');(target || $('details-toggle')).focus({preventScroll:true});};
+$('conversation-identity').onclick=()=>{const context=conversationContext(selectedRoom);if(context.peer)showPeer(context.peer.id,context.peer.name,selectedRoom,$('conversation-identity'));else if(!$('details-dialog').open)openDetails();else {inspectedPeer=null;renderPeerCard();}};
 $('room-actions-toggle').onclick=()=>{panelOpeners.set('room-actions-dialog',$('room-actions-toggle'));show('room-actions-dialog');};
 for(const id of ['navigation-dialog','details-dialog','room-actions-dialog'])$(id).addEventListener('close',()=>{
   if($(id).open)return;if(id==='details-dialog'){if(!detailsClosingForResize)restoreDetailsOnWide=false;detailsClosingForResize=false;}const button=id==='navigation-dialog'?$('navigation-toggle'):id==='details-dialog'?$('details-toggle'):$('room-actions-toggle');button.setAttribute('aria-expanded','false');
@@ -1103,7 +1116,7 @@ document.addEventListener('keydown',event=>{if(event.key==='Escape' && $('detail
 document.addEventListener('keydown',event=>{if(event.key==='Escape')endTabDrag();});
 document.addEventListener('keydown',event=>{const tabRoot=event.target.closest?.('#conversation-tabs,#home-direct-tabs');if(!tabRoot)return;if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].includes(event.key))return;const tabs=[...tabRoot.querySelectorAll('[role="tab"]')],index=tabs.indexOf(document.activeElement);if(index<0)return;event.preventDefault();if(event.altKey && ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)){const id=tabs[index].parentElement.dataset.key,group=tabs.filter(tab=>conversationLayout.pinned.includes(tab.parentElement.dataset.key)===conversationLayout.pinned.includes(id)),position=group.indexOf(tabs[index]),target=group[position+(['ArrowRight','ArrowDown'].includes(event.key)?1:-1)];if(target)moveConversation(id,target.parentElement.dataset.key,['ArrowRight','ArrowDown'].includes(event.key));return;}const next=event.key==='Home'?0:event.key==='End'?tabs.length-1:(index+(['ArrowRight','ArrowDown'].includes(event.key)?1:-1)+tabs.length)%tabs.length;tabs[next].focus({preventScroll:true});tabs[next].scrollIntoView?.({block:'nearest',inline:'nearest'});});
 window.addEventListener('resize',()=>{
-  syncNavigationLayout();const dialog=$('details-dialog'),modal=dialog.classList.contains('profile-overlay') || window.innerWidth<1180;
+  syncNavigationLayout();const dialog=$('details-dialog'),modal=window.innerWidth<1180;
   if(!modal && restoreDetailsOnWide && !dialog.open && selectedRoom && !hasBlockingDialog()){const focused=document.activeElement;dialog.show();detailsModal=false;restoreDetailsOnWide=false;$('details-toggle').setAttribute('aria-expanded','true');focused?.focus({preventScroll:true});}
   if(dialog.open && modal!==detailsModal){if(modal && !dialog.contains(document.activeElement)){detailsClosingForResize=true;closePanel(dialog.id,false);restoreDetailsOnWide=true;detailsModal=modal;return;}if(modal && [...document.querySelectorAll('dialog[open]')].some(d=>d.id!=='details-dialog' && (d.id!=='navigation-dialog' || navigationModal))){closePanel(dialog.id,false);detailsModal=modal;return;}const focused=dialog.contains(document.activeElement)?document.activeElement:null,scroll=dialog.scrollTop;panelOpeners.delete(dialog.id);dialog.close();detailsModal=modal;if(modal){closePanel('navigation-dialog',false);dialog.showModal();}else dialog.show();panelOpeners.set(dialog.id,$('details-toggle'));$('details-toggle').setAttribute('aria-expanded','true');dialog.scrollTop=scroll;focused?.focus({preventScroll:true});}
   positionMentions();
@@ -1210,7 +1223,7 @@ boot().catch(toast);
 
 // Studio conversation tools. No content is written to browser storage.
 const toolUpdates=new Map(),deliveryStates=new Map(),verificationCache=new Map();
-let toolMessage=null,collectionRoom=null,collectionMode='all',collectionEntries=[],collectionKind='shared',verificationTarget=null,diagnosticPoll=null,activityEntries=[],activityBusy=false,activityReview=0;
+let toolMessage=null,collectionRoom=null,collectionMode='all',collectionEntries=[],collectionKind='shared',verificationTarget=null,fingerprintOpen=true,diagnosticPoll=null,activityEntries=[],activityBusy=false,activityReview=0;
 function toolReference(event){return {peer:event.peer,id:event.id};}
 function toolKey(room,reference){return `${room}:${reference.peer}:${reference.id}`;}
 function updateSlot(update){return `${toolKey(update.room,update.message)}:${update.change.kind}:${update.change.kind==='reaction'?update.actor+':'+update.change.emoji:''}`;}
@@ -1366,14 +1379,9 @@ function renderActivity(){
 }
 $('activity-button').onclick=()=>action($('activity-button'),async()=>{await refreshActivity();if(unlocked)show('activity-dialog');});
 $('review-activity').onclick=()=>action($('review-activity'),async()=>{await invoke('review_activity');await refreshActivity();});
-async function openVerification(){
-  const context=conversationContext(selectedRoom),target=inspectedPeer || context.peer;if(!target || target.id===state?.id)return;
-  const peer=target.id,generation=sessionGeneration,data=await invoke('peer_verification',{peer});if(!unlocked || generation!==sessionGeneration)return;verificationTarget=data;verificationCache.set(peer,data);$('verification-name').textContent=peerDetails(peer,target.room || selectedRoom,target.name).name;$('verification-fingerprint').textContent=data.fingerprint;updateVerificationPanel();show('verification-dialog');
-}
-function updateVerificationPanel(){const data=verificationTarget;if(!data)return;$('verification-status').textContent=data.verified?'Verified on this device':data.same_name_verified?'A different verified identity uses this name. Compare this identity separately.':'Not verified';$('confirm-verification').hidden=!!data.verified;$('remove-verification').hidden=!data.verified;if($('peer-identity').textContent===data.peer)$('peer-verification-status').textContent=data.verified?'Verified identity':'Identity not verified';}
-$('verify-peer-button').onclick=()=>action($('verify-peer-button'),openVerification);
-$('copy-fingerprint').onclick=()=>action($('copy-fingerprint'),()=>invoke('copy_text',{text:verificationTarget?.fingerprint || ''}));
-for(const [id,verified] of [['confirm-verification',true],['remove-verification',false]])$(id).onclick=()=>action($(id),async()=>{const data=verificationTarget;if(!data)return;await invoke('verify_identity',{peer:data.peer,fingerprint:data.fingerprint,verified});data.verified=verified;verificationCache.set(data.peer,data);updateVerificationPanel();});
+$('toggle-fingerprint').onclick=()=>{fingerprintOpen=!fingerprintOpen;renderPeerCard();};
+$('copy-fingerprint').onclick=()=>action($('copy-fingerprint'),async()=>{await invoke('copy_text',{text:verificationTarget?.fingerprint || ''});toast('Fingerprint copied.');});
+for(const [id,verified] of [['confirm-verification',true],['remove-verification',false]])$(id).onclick=()=>action($(id),async()=>{const data=verificationTarget;if(!data)return;await invoke('verify_identity',{peer:data.peer,fingerprint:data.fingerprint,verified});data.verified=verified;verificationCache.set(data.peer,data);fingerprintOpen=!verified;}).then(()=>{if(verificationTarget&&!$('peer-verification').hidden)$(verified?'remove-verification':'confirm-verification').focus({preventScroll:true});});
 async function refreshDiagnostics(){
   const generation=sessionGeneration,data=await invoke('voice_diagnostics');if(!unlocked || generation!==sessionGeneration || !$('voice-diagnostics-dialog').open)return;
   const audio=data.audio || {},snapshot=data.snapshot,devices=diagnosticDevices;if(!unlocked || generation!==sessionGeneration || !$('voice-diagnostics-dialog').open)return;
@@ -1393,8 +1401,8 @@ $('voice-diagnostics-dialog').addEventListener('close',()=>{clearInterval(diagno
 $('diagnostics-settings').onclick=()=>{$('voice-diagnostics-dialog').close();openSettings().then(()=>document.querySelector('[data-settings-tab="audio"]')?.click()).catch(toast);};
 function clearMessageTools(){
   clearInterval(diagnosticPoll);diagnosticPoll=null;diagnosticDevices=[];toolUpdates.clear();deliveryStates.clear();verificationCache.clear();activityEntries=[];activityBusy=false;toolMessage=null;collectionEntries=[];collectionRoom=null;verificationTarget=null;
-  for(const id of ['message-tools-dialog','edit-message-dialog','reaction-dialog','collection-dialog','activity-dialog','verification-dialog','voice-diagnostics-dialog'])$(id).close();
-  for(const id of ['message-tools-actions','message-tools-context','collection-results','activity-results','verification-fingerprint','verification-name','verification-status','voice-diagnostics-facts','voice-diagnostics-peers','voice-diagnostics-room','voice-diagnostics-advice','reaction-custom'])$(id).replaceChildren();
+  for(const id of ['message-tools-dialog','edit-message-dialog','reaction-dialog','collection-dialog','activity-dialog','voice-diagnostics-dialog'])$(id).close();
+  for(const id of ['message-tools-actions','message-tools-context','collection-results','activity-results','verification-fingerprint','verification-hint','voice-diagnostics-facts','voice-diagnostics-peers','voice-diagnostics-room','voice-diagnostics-advice','reaction-custom'])$(id).replaceChildren();
   $('edit-message-text').value='';$('collection-query').value='';$('peer-verification-status').textContent='';$('activity-button').textContent='Activity';$('activity-button').disabled=true;
 }
 setInterval(()=>{if(!unlocked)return;if([...deliveryStates].some(([key,value])=>key.startsWith(selectedRoom+':')&&value.status==='sending'))refreshDeliveries(selectedRoom).catch(()=>{});},3000);

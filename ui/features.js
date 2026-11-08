@@ -67,7 +67,7 @@
   function reset(){epoch++;videoCollapsed=false;stopRecording();window.OchatMedia?.reset();pendingDrop=null;volumeTarget=null;for(const key of ['microphone','deafen'])labelShortcut(key+'-shortcut',null);for(const id of ['shortcut-status','drop-error','peer-volume-error'])$(id).textContent='';$('peer-volume').value=100;$('peer-volume-label').textContent='100%';const volumeButton=$('participant-volume-button');if(volumeButton){volumeButton.hidden=true;volumeButton.onclick=null;}$('visual-grid').replaceChildren();$('visual-stage').hidden=true;$('visual-room-name').textContent='';$('drop-overlay').hidden=true;$('drop-file-list').replaceChildren();$('drop-room-name').textContent='';$('peer-volume-name').textContent='Participant volume';}
   function profile(person){
     let button=$('participant-volume-button');
-    if(!button){button=document.createElement('button');button.id='participant-volume-button';button.className='secondary';$('peer-voice').after(button);}
+    if(!button){button=document.createElement('button');button.id='participant-volume-button';button.className='text-button';button.type='button';$('peer-copy').after(button);}
     button.hidden=!person.voice || person.id===ctx().state?.id;button.textContent='Participant volume…';button.onclick=()=>openVolume(person);
   }
   window.OchatFeatures={sync,reset,mediaEvent,profile,drop,fillShortcuts(settings){stopRecording();for(const key of ['microphone','deafen'])labelShortcut(key+'-shortcut',settings[key+'_shortcut']);},readShortcuts(){return {microphone_shortcut:$('microphone-shortcut-input').value.trim() || null,deafen_shortcut:$('deafen-shortcut-input').value.trim() || null};},

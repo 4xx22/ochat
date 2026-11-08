@@ -1,7 +1,7 @@
 //! Short-lived grants for capture initiated from the trusted main webview.
 use std::{
     collections::HashMap,
-    sync::Mutex,
+    sync::{Mutex, OnceLock},
     time::{Duration, Instant},
 };
 use uuid::Uuid;
@@ -36,16 +36,60 @@ impl CapturePermissions {
     }
 }
 
+static DEV_ORIGIN: OnceLock<tauri::Url> = OnceLock::new();
+
+pub fn configure_dev_origin(url: Option<&tauri::Url>) {
+    // The CLI serves frontendDist over HTTP in development. Packaged builds
+    // must continue to accept only the application protocol.
+    if tauri::is_dev() {
+        if let Some(url) = url {
+            let _ = DEV_ORIGIN.set(url.clone());
+        }
+    }
+}
+
+fn trusted_dev_url(url: &tauri::Url, configured: &tauri::Url) -> bool {
+    url.scheme() == "http"
+        && matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"))
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.origin() == configured.origin()
+}
+
 pub fn trusted_url(url: &tauri::Url) -> bool {
     matches!(
         (url.scheme(), url.host_str()),
         ("tauri", Some("localhost")) | ("http" | "https", Some("tauri.localhost"))
-    )
+    ) || (tauri::is_dev()
+        && DEV_ORIGIN
+            .get()
+            .is_some_and(|configured| trusted_dev_url(url, configured)))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn development_origin_is_exact_and_loopback_only() {
+        let configured = "http://localhost:1430/".parse().unwrap();
+        assert!(trusted_dev_url(
+            &"http://localhost:1430/viewer.html".parse().unwrap(),
+            &configured
+        ));
+        for untrusted in [
+            "http://localhost:1431/",
+            "http://127.0.0.1:1430/",
+            "https://localhost:1430/",
+            "http://localhost.evil:1430/",
+            "http://user@localhost:1430/",
+        ] {
+            assert!(!trusted_dev_url(&untrusted.parse().unwrap(), &configured));
+        }
+        let remote = "http://example.com:1430/".parse().unwrap();
+        assert!(!trusted_dev_url(&remote, &remote));
+        let custom_port = "http://127.0.0.1:1450/".parse().unwrap();
+        assert!(trusted_dev_url(&custom_port, &custom_port));
+    }
     #[test]
     fn grants_are_single_use_source_specific_and_bound_to_active_session() {
         let grants = CapturePermissions::default();
