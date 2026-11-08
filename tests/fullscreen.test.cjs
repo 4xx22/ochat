@@ -44,3 +44,8 @@ test('the private viewer uses DOM resize rather than the privileged general even
  let full=false;const w=await setup(t,{isFullscreen:async()=>full,setFullscreen:async value=>{full=value;},onResized:()=>{throw Error('Event bus is intentionally unavailable');}});w.document.documentElement.dataset.privateViewer='true';
  const target=w.document.getElementById('video');await w.OchatFullscreen.toggle(target);assert.equal(full,true);full=false;w.dispatchEvent(new w.Event('resize'));await new Promise(resolve=>setTimeout(resolve,0));assert.equal(w.OchatFullscreen.active(),false);
 });
+test('a surface with its own exit control can omit the floating close button',async t=>{
+ let full=false;const w=await setup(t,{isFullscreen:async()=>full,setFullscreen:async value=>{full=value;}}),target=w.document.getElementById('video');
+ await w.OchatFullscreen.toggle(target,{closeButton:false});assert.equal(full,true);assert.ok(target.classList.contains('ochat-fullscreen'));assert.equal(w.document.querySelector('.fullscreen-close'),null);
+ await w.OchatFullscreen.toggle(target);assert.equal(full,false);assert.ok(!target.classList.contains('ochat-fullscreen'));
+});

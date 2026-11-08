@@ -1,0 +1,42 @@
+.discord-shell .file-card.has-media{max-width:min(560px,100%)}
+.chat-media{position:relative;width:100%;max-height:420px;aspect-ratio:16/9;margin:10px 0 8px;border-radius:6px;overflow:hidden;background:#101114;color:#fff;outline:none}
+.chat-media:focus-visible{box-shadow:0 0 0 2px var(--accent,#69b4ff)}
+.chat-media video{display:block;width:100%;height:100%;object-fit:contain;background:#101114}
+.chat-media:not([data-state=ready]) video{visibility:hidden}
+.chat-media[data-state=ready] video{cursor:pointer}
+.chat-media-status{position:absolute;inset:auto 12px 12px;text-align:center;font-size:13px;line-height:1.35;color:#ffffffd9;pointer-events:none}
+.chat-media[data-state=error] .chat-media-status{inset:auto 16px 50%;transform:translateY(50%)}
+.chat-media[data-state=error]:has(.chat-media-start:not([hidden])) .chat-media-status{inset:auto 16px 12px;transform:none}
+.chat-media-button{display:inline-flex;flex:none;align-items:center;justify-content:center;width:30px;height:30px;padding:0;border:0;border-radius:5px;background:transparent;color:#fff;cursor:pointer}
+.chat-media-button:hover{background:#ffffff26}
+.chat-media-button:focus-visible{outline:2px solid #69b4ff;outline-offset:1px}
+.chat-media-button svg{width:20px;height:20px;fill:currentColor;pointer-events:none}
+.discord-shell .chat-media-start{position:absolute;inset:0;width:60px;height:60px;margin:auto;border-radius:50%;background:#000000a6;transform:none}
+.discord-shell .chat-media-start:hover{background:#000000d9}
+.chat-media-start[hidden],.chat-media[data-state=ready] .chat-media-start,.chat-media[data-state=loading] .chat-media-start{display:none}
+.chat-media-start svg{width:34px;height:34px}
+.discord-shell .chat-media-save{position:absolute;top:8px;right:8px;background:#0000008c;transition:opacity .16s}
+.discord-shell .chat-media-save:hover{background:#000000d9}
+.chat-media-idle .chat-media-save,.chat-media[data-state=loading] .chat-media-save{opacity:0;pointer-events:none}
+.chat-media-controls{position:absolute;right:0;bottom:0;left:0;display:none;align-items:center;gap:3px;padding:22px 8px 7px;background:linear-gradient(transparent,#000000c9 70%);transition:opacity .16s}
+.chat-media[data-state=ready] .chat-media-controls{display:flex}
+.chat-media-idle .chat-media-controls{opacity:0;pointer-events:none}
+.chat-media-idle video{cursor:none!important}
+.chat-media-clock{flex:none;margin:0 6px;font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.chat-media-right{display:flex;flex:none;align-items:center;gap:3px}
+.chat-media input.chat-media-range{--fill:0%;flex:1 1 60px;min-width:40px;width:auto;height:18px;margin:0;padding:0;border:0;background:transparent;-webkit-appearance:none;appearance:none;cursor:pointer}
+.chat-media input.chat-media-volume{flex:0 0 64px;width:64px;min-width:0}
+.chat-media-range::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:linear-gradient(to right,#fff var(--fill),#ffffff59 var(--fill))}
+.chat-media-range::-webkit-slider-thumb{width:12px;height:12px;margin-top:-4px;border:0;border-radius:50%;background:#fff;-webkit-appearance:none;appearance:none}
+.chat-media-range:focus-visible{outline:2px solid #69b4ff;outline-offset:1px;border-radius:3px}
+.chat-media.ochat-fullscreen{aspect-ratio:auto!important;max-height:none!important;overflow:visible}
+.chat-media.ochat-fullscreen video{flex:1 1 0;min-height:0;height:auto}
+.discord-shell .chat-media.ochat-fullscreen .chat-media-save{display:none}
+.chat-media-audio{aspect-ratio:auto;max-height:none;overflow:visible}
+.chat-media-audio audio{display:none}
+.chat-media-audio .chat-media-controls{position:static;display:flex;padding:6px 8px;background:none}
+.chat-media-audio[data-state] .chat-media-status{position:static;padding:0 12px 8px;text-align:left;transform:none}
+.discord-shell .chat-media-audio .chat-media-save{position:static;background:transparent}
+.discord-shell .chat-media-audio .chat-media-save:hover{background:#ffffff26}
+.chat-media-range:disabled{cursor:default;opacity:.45}
+@media (max-width:640px){.chat-media input.chat-media-volume{display:none}}

@@ -507,7 +507,8 @@ impl Vault {
                             .is_some_and(|id| ids.contains(id)));
                 let selection = object.key == format!("channel_view/{room}")
                     && object.value.as_str() == Some(channel.to_string().as_str());
-                let offered = object.key.starts_with(&format!("send_file/{room}/"))
+                let offered = (object.key.starts_with(&format!("send_file/{room}/"))
+                    || object.key.starts_with(&format!("received_media/{room}/")))
                     && (object.value["offer"]["channel"]
                         .as_str()
                         .or_else(|| object.value[0]["channel"].as_str())
@@ -539,11 +540,17 @@ impl Vault {
         tx.commit()?;
         if let Some(channel) = deleted {
             for object in &objects {
-                if object.key.starts_with(&format!("send_file/{room}/"))
-                    && object.value["offer"]["channel"]
-                        .as_str()
-                        .and_then(|s| s.parse::<Uuid>().ok())
-                        == Some(channel)
+                let folder = if object.key.starts_with(&format!("send_file/{room}/")) {
+                    "file-staging"
+                } else if object.key.starts_with(&format!("received_media/{room}/")) {
+                    "received-media"
+                } else {
+                    continue;
+                };
+                if object.value["offer"]["channel"]
+                    .as_str()
+                    .and_then(|s| s.parse::<Uuid>().ok())
+                    == Some(channel)
                 {
                     if let Some(context) = object.value["context"]
                         .as_str()
@@ -551,7 +558,7 @@ impl Vault {
                     {
                         let _ = fs::remove_file(
                             self.directory
-                                .join("file-staging")
+                                .join(folder)
                                 .join(room.to_string())
                                 .join(format!("{context}.bin")),
                         );
@@ -686,6 +693,7 @@ impl Vault {
             format!("desktop_download/{room}/"),
             format!("transfer/{room}/"),
             format!("send_file/{room}/"),
+            format!("received_media/{room}/"),
             format!("issued_invite/{room}/"),
             format!("admission/{room}/"),
             format!("inline/{room}/"),
@@ -793,9 +801,11 @@ impl Vault {
             }
         }
         tx.commit()?;
-        let staging = self.directory.join("file-staging").join(room.to_string());
-        if staging.is_dir() {
-            fs::remove_dir_all(staging)?;
+        for folder in ["file-staging", "received-media"] {
+            let staging = self.directory.join(folder).join(room.to_string());
+            if staging.is_dir() {
+                fs::remove_dir_all(staging)?;
+            }
         }
         Ok(())
     }
@@ -863,7 +873,9 @@ impl Vault {
             // These records are excluded by export and must not be injected by
             // a separately constructed, otherwise authenticated archive.
             ensure!(
-                !object.key.starts_with("transfer/") && !object.key.starts_with("send_file/"),
+                !object.key.starts_with("transfer/")
+                    && !object.key.starts_with("send_file/")
+                    && !object.key.starts_with("received_media/"),
                 "Backup contains nonportable file transfer state"
             );
             ensure!(
@@ -1086,7 +1098,11 @@ mod security_input_tests {
         existing.put("history/sentinel", &"Unchanged").unwrap();
         drop(existing);
         let archive = temp.path().join("nonportable.ochat-backup");
-        for record in ["transfer/room/peer/file", "send_file/room/file"] {
+        for record in [
+            "transfer/room/peer/file",
+            "send_file/room/file",
+            "received_media/room/file/peer",
+        ] {
             let mut objects = source.backup_objects().unwrap();
             objects.push(Object {
                 key: record.into(),

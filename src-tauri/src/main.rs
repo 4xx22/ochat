@@ -40,10 +40,10 @@ mod linux_screen;
 use linux_screen::*;
 mod shortcut_keys;
 mod shortcuts;
-mod video_commands;
+mod chat_media_commands;
 mod viewer;
 use media_commands::*;
-use video_commands::*;
+use chat_media_commands::*;
 type Reply<T> = Result<T, String>;
 #[tauri::command]
 async fn check_for_updates(
@@ -1432,8 +1432,10 @@ fn main() {
                 save_workspace,
                 desktop_hide,
                 transfer_history,
-                chat_video_info,
-                chat_video_chunk,
+                chat_media_info,
+                chat_media_chunk,
+                receive_chat_media,
+                save_chat_media,
                 reveal_download,
                 privacy_dashboard,
                 block_peer,

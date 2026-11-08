@@ -172,6 +172,7 @@ impl Vault {
         objects.retain(|o| {
             !o.key.starts_with("transfer/")
                 && !o.key.starts_with("send_file/")
+                && !o.key.starts_with("received_media/")
                 && !o.key.starts_with("desktop_download/")
                 && !o.key.starts_with("desktop_transfer/")
         });

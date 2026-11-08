@@ -51,7 +51,7 @@ mod tests {
             assert!(!allowed("main", &remote, name));
             assert!(!allowed("unrecognized-window", &local, name));
         }
-        assert_eq!(count, 151);
+        assert_eq!(count, 153);
         assert!(!allowed(
             "visual-viewer",
             &local,
