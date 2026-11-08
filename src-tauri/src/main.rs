@@ -38,9 +38,11 @@ use library_commands::*;
 use photo_commands::*;
 mod linux_screen;
 use linux_screen::*;
+mod chat_media_commands;
 mod shortcut_keys;
 mod shortcuts;
 mod viewer;
+use chat_media_commands::*;
 use media_commands::*;
 type Reply<T> = Result<T, String>;
 #[tauri::command]
@@ -1430,6 +1432,10 @@ fn main() {
                 save_workspace,
                 desktop_hide,
                 transfer_history,
+                chat_media_info,
+                chat_media_chunk,
+                receive_chat_media,
+                save_chat_media,
                 reveal_download,
                 privacy_dashboard,
                 block_peer,

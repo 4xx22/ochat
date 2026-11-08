@@ -59,6 +59,7 @@ mod security_media;
 #[cfg(test)]
 #[path = "security_regression_tests.rs"]
 mod security_regression_tests;
+use crate::chat_media::{MAX_MEDIA_PREVIEW, MEDIA_NOT_PLAYABLE, MEDIA_SNIFF_LEN, media_mime};
 use file_snapshot::OfferedSource;
 #[path = "system_audio_node.rs"]
 mod system_audio_node;
@@ -331,6 +332,17 @@ pub struct TransferCheckpoint {
     pub offer: FileOffer,
     pub destination: PathBuf,
     pub partial: PathBuf,
+}
+
+/// Received audio or video kept in encrypted app storage. Readable without a live room.
+pub struct StoredMedia(Arc<file_snapshot::StagedFile>);
+impl StoredMedia {
+    pub fn open(vault: &Vault, room: Uuid, peer: &str, id: Uuid) -> Result<Option<Self>> {
+        Ok(file_snapshot::open_received(vault, room, peer, id)?.map(Self))
+    }
+    pub fn read(&self, position: u64, max: usize) -> Result<(u64, Vec<u8>)> {
+        Ok((self.0.size(), self.0.read_range(position, max)?))
+    }
 }
 
 pub struct ChatNode {
@@ -3270,6 +3282,20 @@ impl ChatNode {
         Ok(offer)
     }
 
+    /// Reads this device's own offer for local playback, from its encrypted snapshot.
+    pub fn read_offered_file(
+        &self,
+        id: Uuid,
+        position: u64,
+        max: usize,
+    ) -> Result<Option<(u64, Vec<u8>)>> {
+        let Some((offer, OfferedSource::Stage(stage))) =
+            self.files.lock().unwrap().get(&id).cloned()
+        else {
+            return Ok(None);
+        };
+        Ok(Some((offer.size, stage.read_range(position, max)?)))
+    }
     pub fn incoming_offer(&self, peer: &str, id: Uuid) -> Result<FileOffer> {
         if let Some(offer) = self
             .received
@@ -3468,17 +3494,123 @@ impl ChatNode {
         result
     }
 
+    fn transfer_lock(&self, id: Uuid) -> Arc<tokio::sync::Mutex<()>> {
+        let mut locks = self.transfer_locks.lock().unwrap();
+        locks.retain(|_, v| v.strong_count() > 0);
+        let lock = locks
+            .get(&id)
+            .and_then(Weak::upgrade)
+            .unwrap_or_else(|| Arc::new(tokio::sync::Mutex::new(())));
+        locks.insert(id, Arc::downgrade(&lock));
+        lock
+    }
+
+    /// Downloads accepted audio or video into encrypted app storage: no plaintext reaches the disk.
+    /// An interrupted download is discarded and restarts from the beginning.
+    pub async fn receive_media(&self, peer: &str, id: Uuid) -> Result<()> {
+        let vault = self.vault.clone().context("Unlock your account first")?;
+        let lock = self.transfer_lock(id);
+        let _transfer = lock
+            .try_lock_owned()
+            .context("This transfer is already running")?;
+        let _slot = self
+            .downloads
+            .clone()
+            .try_acquire_owned()
+            .context("Two downloads are already in progress")?;
+        let offer = self.incoming_offer(peer, id)?;
+        ensure!(
+            offer.size <= MAX_MEDIA_PREVIEW,
+            "This file is too large to keep in chat"
+        );
+        let room = self
+            .snapshot()
+            .room
+            .context("Reconnect to this room first")?
+            .id;
+        if file_snapshot::open_received(&vault, room, peer, id)?.is_some() {
+            self.received.lock().unwrap().remove(&(peer.into(), id));
+            self.progress(&offer, peer, offer.size, "received");
+            return Ok(());
+        }
+        let conn = self
+            .room
+            .lock()
+            .unwrap()
+            .as_ref()
+            .and_then(|r| r.peers.get(peer))
+            .map(|p| p.conn.clone())
+            .context("Participant disconnected")?;
+        let directory = file_snapshot::received_directory(&vault, room);
+        let mut count = 0;
+        let result: Result<()> = async {
+            let mut writer =
+                tokio::task::spawn_blocking(move || file_snapshot::StageWriter::create(&directory))
+                    .await??;
+            let (mut send, mut recv) = conn.open_bi().await?;
+            let request = FileRequest {
+                id: Some(id),
+                emoji: None,
+                offset: 0,
+                prefix_hash: None,
+            };
+            write_frame(&mut send, &request).await?;
+            let remote: FileOffer =
+                timeout(Duration::from_secs(15), read_frame(&mut recv)).await??;
+            ensure!(
+                remote.id == offer.id && remote.size == offer.size && remote.hash == offer.hash,
+                "File offer changed"
+            );
+            let mut hash = blake3::Hasher::new();
+            let mut head = Vec::with_capacity(MEDIA_SNIFF_LEN);
+            let mut buf = vec![0; 64 * 1024];
+            let mut update = Instant::now();
+            while let Some(len) = timeout(Duration::from_secs(30), recv.read(&mut buf)).await?? {
+                count += len as u64;
+                ensure!(count <= offer.size, "File is too large");
+                hash.update(&buf[..len]);
+                if head.len() < MEDIA_SNIFF_LEN {
+                    let take = (MEDIA_SNIFF_LEN - head.len()).min(len);
+                    head.extend_from_slice(&buf[..take]);
+                    ensure!(
+                        head.len() < MEDIA_SNIFF_LEN || media_mime(&head).is_some(),
+                        MEDIA_NOT_PLAYABLE
+                    );
+                }
+                (writer, buf) = tokio::task::spawn_blocking(move || {
+                    writer.append(&buf[..len])?;
+                    Ok::<_, anyhow::Error>((writer, buf))
+                })
+                .await??;
+                if update.elapsed() > Duration::from_millis(200) {
+                    self.progress(&offer, peer, count, "receiving");
+                    update = Instant::now();
+                }
+            }
+            ensure!(
+                count == offer.size && hash.finalize().to_hex().as_str() == offer.hash,
+                "File verification failed"
+            );
+            ensure!(media_mime(&head).is_some(), MEDIA_NOT_PLAYABLE);
+            let stage = tokio::task::spawn_blocking(move || writer.finish()).await??;
+            stage.persist_received(&vault, room, peer, &offer)?;
+            self.received.lock().unwrap().remove(&(peer.into(), id));
+            write_frame(&mut send, &true).await?;
+            send.finish()?;
+            Ok(())
+        }
+        .await;
+        self.progress(
+            &offer,
+            peer,
+            count,
+            if result.is_ok() { "received" } else { "failed" },
+        );
+        result
+    }
+
     pub async fn receive_file(&self, peer: &str, id: Uuid, destination: PathBuf) -> Result<()> {
-        let lock = {
-            let mut locks = self.transfer_locks.lock().unwrap();
-            locks.retain(|_, v| v.strong_count() > 0);
-            let lock = locks
-                .get(&id)
-                .and_then(Weak::upgrade)
-                .unwrap_or_else(|| Arc::new(tokio::sync::Mutex::new(())));
-            locks.insert(id, Arc::downgrade(&lock));
-            lock
-        };
+        let lock = self.transfer_lock(id);
         let _transfer = lock
             .try_lock_owned()
             .context("This transfer is already running")?;

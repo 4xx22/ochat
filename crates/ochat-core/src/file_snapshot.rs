@@ -43,6 +43,85 @@ impl Drop for StagedFile {
         }
     }
 }
+/// Seals plaintext as it arrives. An unfinished stage deletes itself when dropped.
+pub(super) struct StageWriter {
+    output: File,
+    stage: StagedFile,
+    pending: Zeroizing<Vec<u8>>,
+}
+impl StageWriter {
+    pub(super) fn create(dir: &Path) -> Result<Self> {
+        Self::open(dir, None)
+    }
+    fn open(dir: &Path, temp: Option<tempfile::TempDir>) -> Result<Self> {
+        std::fs::create_dir_all(dir)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+        }
+        let context = Uuid::new_v4();
+        let path = dir.join(format!("{context}.bin"));
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let output = options.open(&path)?;
+        Ok(Self {
+            output,
+            stage: StagedFile {
+                path,
+                key: Zeroizing::new(rand::random()),
+                size: 0,
+                context,
+                _temp: temp,
+                durable: AtomicBool::new(false),
+            },
+            pending: Zeroizing::new(Vec::with_capacity(CHUNK as usize)),
+        })
+    }
+    pub(super) fn append(&mut self, mut data: &[u8]) -> Result<()> {
+        while !data.is_empty() {
+            let take = (CHUNK as usize - self.pending.len()).min(data.len());
+            self.pending.extend_from_slice(&data[..take]);
+            data = &data[take..];
+            if self.pending.len() == CHUNK as usize {
+                self.seal()?;
+            }
+        }
+        Ok(())
+    }
+    fn seal(&mut self) -> Result<()> {
+        let cipher = XChaCha20Poly1305::new((&*self.stage.key).into());
+        let nonce: [u8; 24] = rand::random();
+        let len = self.pending.len();
+        let aad = self.stage.aad(self.stage.size / CHUNK, len);
+        let encrypted = cipher
+            .encrypt(
+                &XNonce::from(nonce),
+                Payload {
+                    msg: &self.pending,
+                    aad: &aad,
+                },
+            )
+            .map_err(|_| anyhow::anyhow!("File snapshot encryption failed"))?;
+        self.output.write_all(&nonce)?;
+        self.output.write_all(&encrypted)?;
+        self.stage.size += len as u64;
+        self.pending.clear();
+        Ok(())
+    }
+    pub(super) fn finish(mut self) -> Result<Arc<StagedFile>> {
+        if !self.pending.is_empty() {
+            self.seal()?;
+        }
+        self.output.sync_all()?;
+        Ok(Arc::new(self.stage))
+    }
+}
 impl StagedFile {
     pub(super) fn capture(
         source: &Path,
@@ -60,70 +139,25 @@ impl StagedFile {
         } else {
             None
         };
-        let dir = directory.unwrap_or_else(|| temp.as_ref().unwrap().path());
-        std::fs::create_dir_all(dir)?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
-        }
-        let context = Uuid::new_v4();
-        let path = dir.join(format!("{context}.bin"));
-        let mut options = OpenOptions::new();
-        options.write(true).create_new(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-        }
-        let mut output = options.open(&path)?;
-        let key: Zeroizing<[u8; 32]> = Zeroizing::new(rand::random());
-        let cipher = XChaCha20Poly1305::new((&*key).into());
-        let mut stage = Self {
-            path,
-            key,
-            size: 0,
-            context,
-            _temp: temp,
-            durable: AtomicBool::new(false),
-        };
+        let dir = directory
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| temp.as_ref().unwrap().path().to_path_buf());
+        let mut writer = StageWriter::open(&dir, temp)?;
         let mut hash = blake3::Hasher::new();
         let mut buf = Zeroizing::new(vec![0; CHUNK as usize]);
+        let mut total = 0;
         loop {
-            let mut len = 0;
-            while len < buf.len() {
-                let n = input.read(&mut buf[len..])?;
-                if n == 0 {
-                    break;
-                }
-                len += n;
-            }
+            let len = input.read(&mut buf)?;
             if len == 0 {
                 break;
             }
-            ensure!(
-                stage.size + len as u64 <= MAX_FILE,
-                "Choose a file no larger than 2 GiB"
-            );
-            let nonce: [u8; 24] = rand::random();
-            let aad = stage.aad(stage.size / CHUNK, len);
-            let encrypted = cipher
-                .encrypt(
-                    &XNonce::from(nonce),
-                    Payload {
-                        msg: &buf[..len],
-                        aad: &aad,
-                    },
-                )
-                .map_err(|_| anyhow::anyhow!("File snapshot encryption failed"))?;
-            output.write_all(&nonce)?;
-            output.write_all(&encrypted)?;
+            total += len as u64;
+            ensure!(total <= MAX_FILE, "Choose a file no larger than 2 GiB");
+            writer.append(&buf[..len])?;
             hash.update(&buf[..len]);
-            stage.size += len as u64;
         }
-        output.sync_all()?;
-        let size = stage.size;
-        Ok((Arc::new(stage), size, hash.finalize().to_hex().to_string()))
+        let stage = writer.finish()?;
+        Ok((stage, total, hash.finalize().to_hex().to_string()))
     }
     fn aad(&self, index: u64, len: usize) -> Vec<u8> {
         let mut aad = b"ochat/5/file-snapshot".to_vec();
@@ -180,6 +214,41 @@ impl StagedFile {
         }
         Ok(plain)
     }
+    pub(super) fn size(&self) -> u64 {
+        self.size
+    }
+    /// Plaintext from `position`, up to `max` bytes, across chunk boundaries.
+    pub(super) fn read_range(&self, position: u64, max: usize) -> Result<Vec<u8>> {
+        let mut bytes = Vec::new();
+        let mut cursor = position;
+        while bytes.len() < max && cursor < self.size {
+            let chunk = self.read_at(cursor)?;
+            ensure!(!chunk.is_empty(), "Encrypted file snapshot was truncated");
+            let take = chunk.len().min(max - bytes.len());
+            bytes.extend_from_slice(&chunk[..take]);
+            cursor += take as u64;
+        }
+        Ok(bytes)
+    }
+    pub(super) fn persist_received(
+        &self,
+        vault: &Vault,
+        room: Uuid,
+        peer: &str,
+        offer: &FileOffer,
+    ) -> Result<()> {
+        vault.put(
+            &received_key(room, offer.id, peer),
+            &Record {
+                version: 2,
+                offer: offer.clone(),
+                key: *self.key,
+                context: self.context,
+            },
+        )?;
+        self.durable.store(true, Ordering::Relaxed);
+        Ok(())
+    }
     pub(super) fn prefix_hash(&self, offset: u64) -> Result<String> {
         ensure!(offset <= self.size, "Invalid resume offset");
         let mut hash = blake3::Hasher::new();
@@ -192,6 +261,39 @@ impl StagedFile {
         }
         Ok(hash.finalize().to_hex().to_string())
     }
+}
+fn received_key(room: Uuid, id: Uuid, peer: &str) -> String {
+    format!("received_media/{room}/{id}/{peer}")
+}
+pub(super) fn received_directory(vault: &Vault, room: Uuid) -> PathBuf {
+    vault
+        .directory()
+        .join("received-media")
+        .join(room.to_string())
+}
+/// Media stored from this sender, or `None` once it is gone from app storage.
+pub(super) fn open_received(
+    vault: &Vault,
+    room: Uuid,
+    peer: &str,
+    id: Uuid,
+) -> Result<Option<Arc<StagedFile>>> {
+    let Some(record) = vault.get::<Record>(&received_key(room, id, peer))? else {
+        return Ok(None);
+    };
+    let path = received_directory(vault, room).join(format!("{}.bin", record.context));
+    let expected = record.offer.size + record.offer.size.div_ceil(CHUNK) * 40;
+    if !std::fs::metadata(&path).is_ok_and(|meta| meta.len() == expected) {
+        return Ok(None);
+    }
+    Ok(Some(Arc::new(StagedFile {
+        path,
+        key: Zeroizing::new(record.key),
+        size: record.offer.size,
+        context: record.context,
+        _temp: None,
+        durable: AtomicBool::new(true),
+    })))
 }
 pub(super) fn restore(
     vault: &Vault,
@@ -256,6 +358,37 @@ mod tests {
                 .to_hex()
                 .to_string()
         );
+    }
+    #[test]
+    fn streamed_writes_seal_uneven_input_into_readable_chunks() {
+        let dir = tempfile::tempdir().unwrap();
+        let original: Vec<u8> = (0..CHUNK as usize * 2 + 1234).map(|i| i as u8).collect();
+        let mut writer = StageWriter::create(dir.path()).unwrap();
+        let path = writer.stage.path.clone();
+        for piece in original.chunks(777) {
+            writer.append(piece).unwrap();
+        }
+        let stage = writer.finish().unwrap();
+        assert_eq!(stage.size(), original.len() as u64);
+        assert_eq!(
+            stage.read_range(CHUNK - 5, CHUNK as usize + 9).unwrap(),
+            original[CHUNK as usize - 5..CHUNK as usize * 2 + 4]
+        );
+        assert_eq!(stage.read_range(0, usize::MAX).unwrap(), original);
+        let encrypted = std::fs::read(&path).unwrap();
+        assert!(!encrypted.windows(64).any(|v| v == &original[..64]));
+        drop(stage);
+        assert!(!path.exists());
+    }
+    #[test]
+    fn abandoned_stream_leaves_no_file_behind() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut writer = StageWriter::create(dir.path()).unwrap();
+        writer.append(&[7; 100]).unwrap();
+        let path = writer.stage.path.clone();
+        assert!(path.exists());
+        drop(writer);
+        assert!(!path.exists());
     }
     #[test]
     fn snapshot_tampering_is_rejected_and_ephemeral_ciphertext_is_cleaned() {

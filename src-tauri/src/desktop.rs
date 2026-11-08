@@ -254,6 +254,6 @@ pub async fn reveal_download(
         .await?
         .get(&format!("desktop_download/{room}/{id}"))
         .map_err(error)?
-        .ok_or("This file has no saved local destination")?;
+        .ok_or("This file is stored inside Ochat. Use the save button on its message first")?;
     app.opener().reveal_item_in_dir(path).map_err(error)
 }

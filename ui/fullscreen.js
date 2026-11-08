@@ -19,7 +19,7 @@
       cleanup(current);
     }finally{busy=false;}
   }
-  async function toggle(target){
+  async function toggle(target,{closeButton=true}={}){
     if(busy)return;
     if(session){await exit();return;}
     if(!target?.isConnected)return;
@@ -31,7 +31,7 @@
         if(!current.wasFullscreen)await current.native.setFullscreen(true);
         current.seenFullscreen=await current.native.isFullscreen();
         target.classList.add('ochat-fullscreen');
-        const close=document.createElement('button');close.type='button';close.className='fullscreen-close';close.textContent='Exit fullscreen';close.onclick=()=>exit().catch(report);document.body.append(close);current.close=close;close.focus({preventScroll:true});
+        if(closeButton){const close=document.createElement('button');close.type='button';close.className='fullscreen-close';close.textContent='Exit fullscreen';close.onclick=()=>exit().catch(report);document.body.append(close);current.close=close;close.focus({preventScroll:true});}
         const resized=async()=>{
           if(busy || session!==current)return;
           try{

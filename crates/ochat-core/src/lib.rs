@@ -3,6 +3,7 @@ pub mod audio;
 mod avatar_gif;
 pub mod calls;
 pub mod channels;
+pub mod chat_media;
 pub mod conversations;
 pub mod diagnostics;
 pub mod discord_webhook;
@@ -31,7 +32,7 @@ pub mod voice_codec;
 mod voice_transport;
 
 pub use network::TransferCheckpoint;
-pub use network::{ChatNode, Event, Snapshot};
+pub use network::{ChatNode, Event, Snapshot, StoredMedia};
 /// Negotiated protocol identifier for endpoints communicating with Ochat.
 pub use protocol::ALPN as CONNECTION_ALPN;
 pub use protocol::{FileOffer, Invitation};
