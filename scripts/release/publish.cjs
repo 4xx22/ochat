@@ -24,10 +24,12 @@ function publish(planFile,{tag,version,repository,commit,run,notes}){
  }
  const endpoint='repos/'+repository+'/releases/tags/'+encodeURIComponent(tag);
  let releaseId=null;
- function releaseById(){
-  const value=JSON.parse(gh(['api','repos/'+repository+'/releases/'+releaseId]));
-  if(value.id!==releaseId||value.tag_name!==tag)throw Error('The GitHub release identity changed');
+ function identify(value){
+  if(!value||!Number.isSafeInteger(value.id)||value.id<=0||value.tag_name!==tag||(releaseId!==null&&value.id!==releaseId))throw Error('The GitHub release identity changed');
   return value;
+ }
+ function releaseById(){
+  return identify(JSON.parse(gh(['api','repos/'+repository+'/releases/'+releaseId])));
  }
  function release(){
   if(releaseId!==null)return releaseById();
@@ -53,16 +55,19 @@ function publish(planFile,{tag,version,repository,commit,run,notes}){
  if(current&&!current.draft){verifyAssets(current);return {url:current.html_url,alreadyPublished:true};}
  if(current&&current.target_commitish!==commit)throw Error('Existing draft belongs to another source commit');
  if(!current){
-  gh(['release','create',tag,'--draft','--verify-tag','--target',commit,'--title','Ochat '+version,'--generate-notes',...(notes?['--notes',notes]:[]),...(version.includes('-')?['--prerelease']:[])]);
-  current=release();if(!current?.draft||current.target_commitish!==commit)throw Error('Could not create the expected draft release');
+  // Keep the POST response: a fresh draft can be absent from tag/list lookups.
+  // Use its stable ID for every subsequent operation, including file uploads.
+  current=identify(JSON.parse(gh(['api','repos/'+repository+'/releases','--method','POST','--raw-field','tag_name='+tag,'--raw-field','target_commitish='+commit,'--raw-field','name=Ochat '+version,'--field','draft=true','--field','prerelease='+version.includes('-'),'--field','generate_release_notes=true',...(notes?['--raw-field','body='+notes]:[])])));
+  releaseId=current.id;
+  if(!current.draft||current.target_commitish!==commit)throw Error('Could not create the expected draft release');
  }
  const existing=current.assets||[];
  for(const asset of existing){const file=plan.files.find(f=>f.name===asset.name);if(!file||asset.state!=='uploaded'||asset.size!==file.bytes||asset.digest!=='sha256:'+file.sha256)throw Error('Existing draft has a different or incomplete asset: '+asset.name);}
  const missing=plan.files.filter(file=>!existing.some(asset=>asset.name===file.name));
- if(missing.length)gh(['release','upload',tag,...missing.map(f=>path.join(directory,f.name))]);
+ for(const file of missing)gh(['api','https://uploads.github.com/repos/'+repository+'/releases/'+releaseId+'/assets?name='+encodeURIComponent(file.name),'--method','POST','--header','Content-Type: application/octet-stream','--header','Content-Length: '+file.bytes,'--input',path.join(directory,file.name)]);
  current=release();verifyAssets(current);verifyTag();
- gh(['release','edit',tag,'--draft=false']);
- current=release();if(!current||current.draft)throw Error('Release is still a draft');verifyAssets(current);
+ current=identify(JSON.parse(gh(['api','repos/'+repository+'/releases/'+releaseId,'--method','PATCH','--field','draft=false'])));
+ if(current.draft)throw Error('Release is still a draft');verifyAssets(current);verifyTag();
  return {url:current.html_url,alreadyPublished:false};
 }
 module.exports={publish,notesForVersion};

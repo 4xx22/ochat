@@ -17,33 +17,43 @@ function fixture(t){
  fs.writeFileSync(path.join(input,'macOS/validation.json'),JSON.stringify({verification:'success',signing:'ad-hoc',notarized:false}));
  return {root,input,output,make:()=>prepare(input,output,TAG,VERSION),planFile:path.join(output,'release-plan.json')};
 }
-function service(plan,{existing=null,annotated=false,paged=false}={}){
+const creates=args=>args[0]==='api'&&args[1]==='repos/example/ochat/releases'&&args.includes('POST');
+const uploads=args=>args[0]==='api'&&args[1].startsWith('https://uploads.github.com/');
+const publishes=args=>args[0]==='api'&&args.includes('PATCH');
+const mutates=args=>creates(args)||uploads(args)||publishes(args);
+function service(plan,{existing=null,annotated=false,paged=false,hiddenAfterCreate=false}={}){
  const state={release:existing,calls:[],uploadFailure:false,corruptUpload:false,moveAfterUpload:false,uploaded:false};
  const assets=files=>files.map(f=>({name:f.name,size:f.bytes,digest:'sha256:'+f.sha256,state:'uploaded'}));
  state.assets=assets;
  state.run=args=>{
   state.calls.push(args);const ok=value=>({status:0,stdout:value===undefined?'':JSON.stringify(value),stderr:''});
+  if(creates(args)){
+   state.created=true;state.release={id:42,tag_name:plan.tag,draft:true,target_commitish:COMMIT,html_url:'https://github.com/example/ochat/releases/tag/'+TAG,assets:[]};return ok({...state.release,...state.createResponse});
+  }
+  if(uploads(args)){
+   assert.ok(args[1].includes('/releases/42/assets?'),'Upload must target the verified release ID');
+   assert.ok(!args.includes('--clobber'),'Release files must never be deleted or overwritten');
+   const file=args[args.indexOf('--input')+1],entry=plan.files.find(f=>f.name===path.basename(file));assert.ok(entry);
+   assert.ok(args.includes('Content-Type: application/octet-stream'));assert.ok(args.includes('Content-Length: '+entry.bytes));
+   assert.ok(args[1].endsWith('name='+encodeURIComponent(entry.name)));state.uploaded=true;
+   state.release.assets.push(...assets([entry]));
+   if(state.uploadFailure)return {status:1,stderr:'Upload connection interrupted'};
+   if(state.corruptUpload)state.release.assets[0].digest='sha256:'+'0'.repeat(64);
+   return ok(state.release.assets.at(-1));
+  }
+  if(publishes(args)){assert.equal(args[1],'repos/example/ochat/releases/42');state.release.draft=false;return ok({id:42,tag_name:plan.tag,...state.release});}
   if(args[0]==='api'){
    if(args[1].includes('/git/ref/'))return ok({object:annotated?{type:'tag',sha:'c'.repeat(40)}:{type:'commit',sha:state.moveAfterUpload&&state.uploaded?'b'.repeat(40):COMMIT}});
    if(args[1].includes('/git/tags/'))return ok({object:{type:'commit',sha:COMMIT}});
    const value=state.release?{id:42,tag_name:plan.tag,...state.release}:null;
    if(args[1].includes('/releases?')){
     assert.ok(args.includes('--paginate')&&args.includes('--slurp'));
-    return ok(paged?[[{id:41,tag_name:'v9.9.9',draft:true}],value?[value]:[]]:[value?[value]:[]]);
+    const listed=hiddenAfterCreate&&state.created?null:value;
+    return ok(paged?[[{id:41,tag_name:'v9.9.9',draft:true}],listed?[listed]:[]]:[listed?[listed]:[]]);
    }
    if(args[1].includes('/releases/tags/')&&value?.draft)return {status:1,stdout:'',stderr:'gh: Not Found (HTTP 404)'};
    return value?ok(value):{status:1,stdout:'',stderr:'gh: Not Found (HTTP 404)'};
   }
-  if(args[1]==='create'){state.release={draft:true,target_commitish:COMMIT,html_url:'https://github.com/example/ochat/releases/tag/'+TAG,assets:[]};return ok();}
-  if(args[1]==='upload'){
-   assert.ok(!args.includes('--clobber'),'Release files must never be deleted or overwritten');
-   const uploaded=args.slice(3).map(file=>plan.files.find(f=>f.name===path.basename(file)));assert.ok(uploaded.every(Boolean));state.uploaded=true;
-   state.release.assets.push(...assets(state.uploadFailure?uploaded.slice(0,1):uploaded));
-   if(state.uploadFailure)return {status:1,stderr:'Upload connection interrupted'};
-   if(state.corruptUpload)state.release.assets[0].digest='sha256:'+'0'.repeat(64);
-   return ok();
-  }
-  if(args[1]==='edit'){state.release.draft=false;return ok();}
   throw Error('Unexpected CLI call: '+JSON.stringify(args));
  };
  return state;
@@ -104,19 +114,34 @@ test('Cargo lock verification accepts synchronized local packages and ignores re
 test('publication verifies remote fingerprints before publishing a complete draft',t=>{
  const f=fixture(t),plan=f.make(),state=service(plan,{annotated:true}),result=publish(f.planFile,context(state));
  assert.equal(result.alreadyPublished,false);assert.equal(state.release.draft,false);assert.equal(state.release.assets.length,6);
- assert.ok(state.calls.findIndex(a=>a[1]==='upload')<state.calls.findIndex(a=>a[1]==='edit'));
- assert.ok(state.calls.some(a=>a[1]==='create'&&a.includes('--verify-tag')&&a.includes('--draft')));
+ assert.ok(state.calls.findIndex(uploads)<state.calls.findIndex(publishes));
+ assert.ok(state.calls.some(a=>creates(a)&&a.includes('draft=true')));
+});
+
+test('a newly created draft publishes by its returned ID even before tag and list indexes see it',t=>{
+ const f=fixture(t),state=service(f.make(),{hiddenAfterCreate:true});publish(f.planFile,context(state));
+ const afterCreate=state.calls.slice(state.calls.findIndex(creates)+1);
+ assert.ok(afterCreate.every(a=>!a[1].includes('/releases/tags/')&&!a[1].includes('/releases?')));
+ assert.equal(state.release.draft,false);assert.equal(state.release.assets.length,6);
+});
+
+test('invalid creation responses cannot upload files or publish a different release',t=>{
+ for(const response of [{id:0},{id:42.5},{tag_name:'v9.9.9'},{target_commitish:'b'.repeat(40)},{draft:false}]){
+  const f=fixture(t),state=service(f.make());state.createResponse=response;
+  assert.throws(()=>publish(f.planFile,context(state)),/identity|expected draft/);
+  assert.equal(state.calls.some(uploads),false);assert.equal(state.calls.some(publishes),false);
+ }
 });
 test('an existing draft hidden from the by-tag endpoint is found on a later page and reused by ID',t=>{
  const f=fixture(t),plan=f.make(),state=service(plan,{paged:true});state.release={draft:true,target_commitish:COMMIT,html_url:'draft',assets:[]};
  publish(f.planFile,context(state));assert.equal(state.release.draft,false);
- assert.equal(state.calls.some(a=>a[1]==='create'),false);
+ assert.equal(state.calls.some(creates),false);
  assert.ok(state.calls.some(a=>a[0]==='api'&&a[1].endsWith('/releases/42')));
 });
 test('an interrupted upload stays a draft and resumes only missing matching files',t=>{
  const f=fixture(t),plan=f.make(),state=service(plan);state.uploadFailure=true;
- assert.throws(()=>publish(f.planFile,context(state)),/interrupted/);assert.equal(state.release.draft,true);assert.equal(state.release.assets.length,1);assert.equal(state.calls.some(a=>a[1]==='edit'),false);
- state.uploadFailure=false;state.calls=[];publish(f.planFile,context(state));assert.equal(state.release.assets.length,6);assert.equal(state.calls.find(a=>a[1]==='upload').length,8);
+ assert.throws(()=>publish(f.planFile,context(state)),/interrupted/);assert.equal(state.release.draft,true);assert.equal(state.release.assets.length,1);assert.equal(state.calls.some(publishes),false);
+ state.uploadFailure=false;state.calls=[];publish(f.planFile,context(state));assert.equal(state.release.assets.length,6);assert.equal(state.calls.filter(uploads).length,5);
 });
 
 test('curated notes are read from the built source and prepended as one literal CLI argument',t=>{
@@ -124,8 +149,8 @@ test('curated notes are read from the built source and prepended as one literal 
  const notes='Discord online announcement\n\nKeeps :name: and $(literal) unchanged.';
  fs.writeFileSync(path.join(directory,'notes.json'),JSON.stringify({[VERSION]:notes}));
  assert.equal(notesForVersion(f.root,VERSION),notes);assert.equal(notesForVersion(f.root,'9.9.9'),undefined);
- publish(f.planFile,{...context(state),notes});const create=state.calls.find(args=>args[1]==='create');
- assert.equal(create[create.indexOf('--notes')+1],notes);assert.ok(create.includes('--generate-notes'));
+ publish(f.planFile,{...context(state),notes});const create=state.calls.find(creates);
+ assert.ok(create.includes('body='+notes));assert.ok(create.includes('generate_release_notes=true'));
 });
 test('malformed curated notes stop publication before touching GitHub',t=>{
  const f=fixture(t),plan=f.make(),state=service(plan);
@@ -134,22 +159,22 @@ test('malformed curated notes stop publication before touching GitHub',t=>{
 });
 test('bad server digests prevent publishing even after an upload succeeds',t=>{
  const f=fixture(t),plan=f.make(),state=service(plan);state.corruptUpload=true;
- assert.throws(()=>publish(f.planFile,context(state)),/verification/);assert.equal(state.release.draft,true);assert.equal(state.calls.some(a=>a[1]==='edit'),false);
+ assert.throws(()=>publish(f.planFile,context(state)),/verification/);assert.equal(state.release.draft,true);assert.equal(state.calls.some(publishes),false);
 });
 test('an identical already-published release is idempotent and never modified',t=>{
  const f=fixture(t),plan=f.make(),state=service(plan);state.release={draft:false,target_commitish:COMMIT,html_url:'published',assets:state.assets(plan.files)};
- assert.equal(publish(f.planFile,context(state)).alreadyPublished,true);assert.ok(state.calls.every(a=>a[0]==='api'));
+ assert.equal(publish(f.planFile,context(state)).alreadyPublished,true);assert.equal(state.calls.some(mutates),false);
 });
 test('a conflicting published release or draft cannot have its assets overwritten',t=>{
  for(const draft of [false,true]){
   const f=fixture(t),plan=f.make(),state=service(plan);state.release={draft,target_commitish:COMMIT,assets:state.assets(plan.files)};state.release.assets[0].digest='sha256:'+'0'.repeat(64);
-  assert.throws(()=>publish(f.planFile,context(state)));assert.ok(state.calls.every(a=>a[0]==='api'));
+  assert.throws(()=>publish(f.planFile,context(state)));assert.equal(state.calls.some(mutates),false);
  }
 });
 test('changed local files and a moved remote tag stop publication',t=>{
  for(const failure of ['local','tag']){
   const f=fixture(t),plan=f.make(),state=service(plan);
   if(failure==='local')fs.appendFileSync(path.join(f.output,plan.files[0].name),'altered');else state.moveAfterUpload=true;
-  assert.throws(()=>publish(f.planFile,context(state)),failure==='local'?/asset changed/:/remote tag/);assert.equal(state.calls.some(a=>a[1]==='edit'),false);
+  assert.throws(()=>publish(f.planFile,context(state)),failure==='local'?/asset changed/:/remote tag/);assert.equal(state.calls.some(publishes),false);
  }
 });
