@@ -3270,6 +3270,29 @@ impl ChatNode {
         Ok(offer)
     }
 
+    /// Reads this device's own offer for local playback, from its encrypted snapshot.
+    pub fn read_offered_file(
+        &self,
+        id: Uuid,
+        position: u64,
+        max: usize,
+    ) -> Result<Option<(u64, Vec<u8>)>> {
+        let Some((offer, OfferedSource::Stage(stage))) =
+            self.files.lock().unwrap().get(&id).cloned()
+        else {
+            return Ok(None);
+        };
+        let mut bytes = Vec::new();
+        let mut cursor = position;
+        while bytes.len() < max && cursor < offer.size {
+            let chunk = stage.read_at(cursor)?;
+            ensure!(!chunk.is_empty(), "Encrypted file snapshot was truncated");
+            let take = chunk.len().min(max - bytes.len());
+            bytes.extend_from_slice(&chunk[..take]);
+            cursor += take as u64;
+        }
+        Ok(Some((offer.size, bytes)))
+    }
     pub fn incoming_offer(&self, peer: &str, id: Uuid) -> Result<FileOffer> {
         if let Some(offer) = self
             .received

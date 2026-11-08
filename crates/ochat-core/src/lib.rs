@@ -26,6 +26,7 @@ pub mod stereo;
 pub mod transmission;
 pub mod updates;
 pub mod vault;
+pub mod video_preview;
 pub mod visual;
 pub mod voice_codec;
 mod voice_transport;

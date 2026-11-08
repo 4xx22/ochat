@@ -59,6 +59,19 @@ async fn three_peers_chat_transfer_and_continue_without_creator() {
     let content: Vec<u8> = (0..2_000_000).map(|i| (i % 251) as u8).collect();
     tokio::fs::write(&source, &content).await.unwrap();
     let offer = alice.offer_file(source).await.unwrap();
+    // The sender's own player reads the encrypted snapshot, across chunk boundaries.
+    let (size, middle) = alice
+        .read_offered_file(offer.id, 70_000, 200_000)
+        .unwrap()
+        .unwrap();
+    assert_eq!(size, content.len() as u64);
+    assert_eq!(middle, content[70_000..270_000]);
+    let (_, end) = alice
+        .read_offered_file(offer.id, 1_999_990, 1_000)
+        .unwrap()
+        .unwrap();
+    assert_eq!(end, content[1_999_990..]);
+    assert!(bob.read_offered_file(offer.id, 0, 16).unwrap().is_none());
     timeout(Duration::from_secs(5), async {
         while bob.incoming_offer(&alice.id(), offer.id).is_err() {
             sleep(Duration::from_millis(10)).await;

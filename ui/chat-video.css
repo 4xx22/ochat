@@ -1,0 +1,32 @@
+.discord-shell .file-card.has-video{max-width:min(560px,100%)}
+.chat-video{position:relative;width:100%;max-height:420px;aspect-ratio:16/9;margin:10px 0 8px;border-radius:6px;overflow:hidden;background:#101114;color:#fff;outline:none}
+.chat-video:focus-visible{box-shadow:0 0 0 2px var(--accent,#69b4ff)}
+.chat-video video{display:block;width:100%;height:100%;object-fit:contain;background:#101114}
+.chat-video:not([data-state=ready]) video{visibility:hidden}
+.chat-video[data-state=ready] video{cursor:pointer}
+.chat-video-status{position:absolute;inset:auto 12px 12px;text-align:center;font-size:13px;line-height:1.35;color:#ffffffd9;pointer-events:none}
+.chat-video[data-state=error] .chat-video-status{inset:auto 16px 50%;transform:translateY(50%)}
+.chat-video[data-state=error]:has(.chat-video-start:not([hidden])) .chat-video-status{inset:auto 16px 12px;transform:none}
+.chat-video-button{display:inline-flex;flex:none;align-items:center;justify-content:center;width:30px;height:30px;padding:0;border:0;border-radius:5px;background:transparent;color:#fff;cursor:pointer}
+.chat-video-button:hover{background:#ffffff26}
+.chat-video-button:focus-visible{outline:2px solid #69b4ff;outline-offset:1px}
+.chat-video-button svg{width:20px;height:20px;fill:currentColor;pointer-events:none}
+.chat-video-jump{width:34px;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums}
+.discord-shell .chat-video-start{position:absolute;inset:0;width:60px;height:60px;margin:auto;border-radius:50%;background:#000000a6;transform:none}
+.discord-shell .chat-video-start:hover{background:#000000d9}
+.chat-video-start[hidden],.chat-video[data-state=ready] .chat-video-start,.chat-video[data-state=loading] .chat-video-start{display:none}
+.chat-video-start svg{width:34px;height:34px}
+.chat-video-controls{position:absolute;right:0;bottom:0;left:0;display:none;align-items:center;gap:3px;padding:22px 8px 7px;background:linear-gradient(transparent,#000000c9 70%);transition:opacity .16s}
+.chat-video[data-state=ready] .chat-video-controls{display:flex}
+.chat-video-idle .chat-video-controls{opacity:0;pointer-events:none}
+.chat-video-idle video{cursor:none!important}
+.chat-video-clock{flex:none;margin:0 6px;font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.chat-video-right{display:flex;flex:none;align-items:center;gap:3px}
+.chat-video input.chat-video-range{--fill:0%;flex:1 1 60px;min-width:40px;width:auto;height:18px;margin:0;padding:0;border:0;background:transparent;-webkit-appearance:none;appearance:none;cursor:pointer}
+.chat-video input.chat-video-volume{flex:0 0 64px;width:64px;min-width:0}
+.chat-video-range::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:linear-gradient(to right,#fff var(--fill),#ffffff59 var(--fill))}
+.chat-video-range::-webkit-slider-thumb{width:12px;height:12px;margin-top:-4px;border:0;border-radius:50%;background:#fff;-webkit-appearance:none;appearance:none}
+.chat-video-range:focus-visible{outline:2px solid #69b4ff;outline-offset:1px;border-radius:3px}
+.chat-video.ochat-fullscreen{aspect-ratio:auto!important;max-height:none!important;overflow:visible}
+.chat-video.ochat-fullscreen video{flex:1 1 0;min-height:0;height:auto}
+@media (max-width:640px){.chat-video input.chat-video-volume,.chat-video-jump{display:none}}
