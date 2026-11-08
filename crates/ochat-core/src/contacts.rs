@@ -55,7 +55,7 @@ impl ContactId {
         let body = value
             .trim()
             .strip_prefix("ochat-contact2:")
-            .context("Paste the complete contact ID from Friends → Copy my contact ID")?;
+            .context("Paste the complete contact ID from Friends → Your ID → Copy")?;
         let card: Self =
             serde_json::from_slice(&URL_SAFE_NO_PAD.decode(body).context("Invalid contact ID")?)
                 .context("Invalid contact ID")?;
@@ -301,7 +301,7 @@ impl ChatNode {
                 friend
             } else {
                 let address=supplied.clone().or_else(||member.as_ref().map(|m|m.address.clone()))
-                    .context("A public identity alone has no connection address. Ask for the complete ID from Friends → Copy my contact ID")?;
+                    .context("A public identity alone has no connection address. Ask for the complete ID from Friends → Your ID → Copy")?;
                 Friend {
                     request_id: None,
                     remote_request_id: None,

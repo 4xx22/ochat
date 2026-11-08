@@ -1,0 +1,101 @@
+/* Friends page: header, inline add form, filter tabs and the contact list grouped by presence. */
+#navigation-friends{container:friends-page/inline-size;box-sizing:border-box;width:100%;max-width:880px;margin:0 auto;color:var(--text)}
+
+/* Header */
+#navigation-friends .friends-header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px 24px;margin:0 0 28px}
+#navigation-friends .friends-heading h1{margin:0;font-size:28px;font-weight:700;line-height:1.2}
+#navigation-dialog #navigation-friends .friends-heading h1{display:none}
+#navigation-friends .friends-intro{margin:6px 0 0;font-size:14px;line-height:1.5;color:var(--muted)}
+#navigation-friends .friends-id{display:flex;align-items:center;gap:10px;box-sizing:border-box;min-height:46px;padding:5px 6px 5px 14px;border:1px solid var(--line);border-radius:999px}
+#navigation-friends .friends-id-label{flex:none;font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+#navigation-friends #friends-own-id{flex:1;min-width:0;font:500 12.5px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;letter-spacing:.02em}
+#navigation-friends #copy-contact-id{display:inline-flex;flex:none;align-items:center;gap:6px;width:auto;height:34px;min-height:0;padding:0 12px;border:0;border-radius:999px;background:var(--panel);color:var(--text);font-size:13px;font-weight:600;white-space:nowrap}
+#navigation-friends #copy-contact-id::before{content:"";width:14px;height:14px;background:currentColor;-webkit-mask:url("icons/copy.svg") center/contain no-repeat;mask:url("icons/copy.svg") center/contain no-repeat}
+#navigation-friends #copy-contact-id:hover:not(:disabled){background:var(--hover)}
+
+/* Add a friend */
+#navigation-friends .friends-add{margin:0 0 28px;padding:18px;border-radius:14px;background:var(--panel)}
+#navigation-friends .friends-add label{display:block;margin:0 0 8px;font-size:14px;font-weight:600;color:var(--text)}
+#navigation-friends .friends-add-row{display:flex;gap:10px}
+#navigation-friends .friends-input,#navigation-friends .friends-search-field{position:relative;display:block;min-width:0}
+#navigation-friends .friends-input{flex:1}
+#navigation-friends .friends-input::before,#navigation-friends .friends-search-field::before{content:"";position:absolute;top:50%;width:18px;height:18px;transform:translateY(-50%);background:var(--muted);pointer-events:none}
+#navigation-friends .friends-input::before{left:15px;-webkit-mask:url("icons/user-plus.svg") center/contain no-repeat;mask:url("icons/user-plus.svg") center/contain no-repeat}
+#navigation-friends .friends-search-field::before{left:13px;width:16px;height:16px;-webkit-mask:url("icons/search.svg") center/contain no-repeat;mask:url("icons/search.svg") center/contain no-repeat}
+#navigation-friends .friends-input input,#navigation-friends .friends-search-field input{box-sizing:border-box;width:100%;margin:0;border:1px solid var(--line);background:var(--bg);color:var(--text);font:inherit;font-size:14px}
+#navigation-friends .friends-input input{height:44px;padding:0 14px 0 44px;border-radius:10px;text-overflow:ellipsis}
+#navigation-friends .friends-input input:focus,#navigation-friends .friends-search-field input:focus{border-color:var(--accent)}
+#navigation-friends #send-friend-request{flex:none;width:auto;height:44px;min-height:0;padding:0 20px;border-radius:10px;font-size:14px;font-weight:600}
+#navigation-friends #send-friend-request:disabled{background:color-mix(in srgb,var(--accent) 24%,var(--panel));color:var(--accent-foreground);opacity:1}
+#navigation-friends .friends-add .form-error{margin:8px 0 0;font-size:13px;overflow-wrap:anywhere}
+#navigation-friends .friends-add .form-error:empty{display:none}
+
+/* Filters and search */
+#navigation-friends .friends-toolbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px}
+#navigation-friends .friends-filters{display:flex;gap:2px;padding:3px;border-radius:10px;background:var(--panel)}
+#navigation-friends .friends-tab{display:inline-flex;align-items:center;gap:8px;width:auto;height:38px;min-height:0;padding:0 14px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--muted);font-size:14px;font-weight:600;white-space:nowrap}
+#navigation-friends .friends-tab:hover{color:var(--text)}
+#navigation-friends .friends-tab[aria-pressed=true]{border-color:var(--line);background:var(--bg);color:var(--text);box-shadow:var(--shadow-control)}
+#navigation-friends .friends-tab[hidden]{display:none}
+#navigation-friends .friends-count{display:inline-grid;place-items:center;box-sizing:border-box;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:color-mix(in srgb,currentColor 13%,transparent);font-size:11.5px;font-weight:600;font-variant-numeric:tabular-nums}
+#navigation-friends .friends-tab[aria-pressed=true] .friends-count{background:var(--accent);color:var(--accent-foreground)}
+#navigation-friends .friends-search-field{flex:0 1 280px}
+#navigation-friends .friends-search-field input{height:40px;padding:0 12px 0 38px;border-radius:9px}
+
+/* Contact list */
+#navigation-friends .friend-list{margin:0;padding:0;overflow:visible}
+#navigation-friends :is(.friend-section,.friend-group,.friend-row)[hidden],#navigation-friends .friends-empty[hidden]{display:none}
+#navigation-friends .friend-section+.friend-section{margin-top:16px}
+#navigation-friends .friend-section:has(#accepted-friend-list)>h3{display:none}
+#navigation-friends :is(.friend-group-title,.friend-section>h3){display:flex;gap:5px;margin:14px 12px 6px;padding:0;font-size:12px;font-weight:700;letter-spacing:.09em;line-height:1.4;text-transform:uppercase;color:var(--muted)}
+#navigation-friends .friend-section>h3>span{all:unset}
+#navigation-friends .friend-section>h3>span::before{content:"— "}
+#navigation-friends .friend-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:6px 16px;box-sizing:border-box;min-width:0;padding:12px;border:0;border-radius:10px;background:transparent;box-shadow:none}
+#navigation-friends .friend-row:is(:hover,:focus-within){background:color-mix(in srgb,var(--hover) 55%,transparent)}
+#navigation-friends .friend-heading{display:flex;align-items:center;justify-content:flex-start;gap:14px;width:100%;min-width:0;min-height:0;padding:0;border:0;background:transparent;color:inherit;text-align:left}
+#navigation-friends .friend-heading:hover{background:transparent}
+#navigation-friends .friend-heading .avatar{flex:none;width:42px;height:42px;min-width:42px;border:0;background:color-mix(in srgb,var(--tone,#6b7280) 16%,var(--bg));color:var(--text);font-size:14px;font-weight:600}
+#navigation-friends .friend-heading .avatar[data-tone="0"]{--tone:#6366f1}
+#navigation-friends .friend-heading .avatar[data-tone="1"]{--tone:#10b981}
+#navigation-friends .friend-heading .avatar[data-tone="2"]{--tone:#f97316}
+#navigation-friends .friend-heading .avatar[data-tone="3"]{--tone:#3b82f6}
+#navigation-friends .friend-heading .avatar[data-tone="4"]{--tone:#ec4899}
+#navigation-friends .friend-heading .avatar[data-tone="5"]{--tone:#8b5cf6}
+#navigation-friends .friend-heading .avatar[data-tone="6"]{--tone:#84cc16}
+#navigation-friends .friend-heading .avatar[data-tone="7"]{--tone:#ca8a04}
+#navigation-friends .friend-heading .avatar>.presence-dot{--panel:var(--bg)}
+#navigation-friends .friend-details{display:grid;gap:2px;min-width:0}
+#navigation-friends .friend-name{display:flex;align-items:center;gap:8px;min-width:0}
+#navigation-friends .friend-name strong{min-width:0;overflow:hidden;font-size:15px;font-weight:600;line-height:1.35;text-overflow:ellipsis;white-space:nowrap}
+#navigation-friends .friend-details small{margin:0;font-size:13px;line-height:1.35;color:var(--muted);overflow-wrap:anywhere}
+#navigation-friends .friend-unread{flex:none;padding:2px 8px;border-radius:999px;background:color-mix(in srgb,var(--accent) 14%,var(--bg));color:color-mix(in srgb,var(--accent) 75%,var(--text));font-size:12px;font-weight:600;line-height:1.35;white-space:nowrap}
+#navigation-friends .friend-controls{display:flex;align-items:center;gap:8px;margin:0;padding:0}
+#navigation-friends .friend-controls .text-button{width:auto;min-height:0;height:34px;padding:0 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);font-size:13px;font-weight:600}
+#navigation-friends .friend-controls .friend-message{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--accent);font-size:0}
+#navigation-friends .friend-controls .friend-message::before{content:"";width:20px;height:20px;background:currentColor;-webkit-mask:url("icons/message.svg") center/contain no-repeat;mask:url("icons/message.svg") center/contain no-repeat}
+#navigation-friends .friend-controls .friend-message:hover:not(:disabled){background:var(--hover)}
+#navigation-friends :is(.request-error,.request-help,.friend-row>.friend-identity){grid-column:1/-1;margin:0 0 0 56px;font-size:12px;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
+#navigation-friends .friends-empty{padding:32px 12px;text-align:center;color:var(--muted);line-height:1.7}
+#navigation-friends .empty-small{margin:12px}
+
+/* Row menu */
+#navigation-friends .friend-more{position:relative}
+#navigation-friends .friend-more>summary{display:grid;place-items:center;box-sizing:border-box;width:36px;height:36px;border-radius:8px;color:var(--muted);font-size:10px;letter-spacing:1px;list-style:none;cursor:pointer}
+#navigation-friends .friend-more>summary::-webkit-details-marker{display:none}
+#navigation-friends .friend-more>summary:hover,#navigation-friends .friend-more[open]>summary{background:var(--hover);color:var(--text)}
+#navigation-friends .friend-more-content{position:absolute;top:calc(100% + 4px);right:0;z-index:8;display:grid;gap:2px;width:max-content;min-width:180px;padding:6px;border:1px solid var(--line);border-radius:10px;background:var(--bg);box-shadow:var(--shadow-floating)}
+#navigation-friends .friend-more-content .friend-identity{margin:0;padding:6px 8px;font:500 11px/1.3 ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;color:var(--muted)}
+#navigation-friends .friend-more-content .text-button{display:block;width:100%;height:auto;padding:8px;border:0;border-radius:6px;background:transparent;font-size:13px;font-weight:500;text-align:left}
+#navigation-friends .friend-more-content .text-button:hover:not(:disabled){background:var(--hover)}
+
+@container friends-page (max-width:620px){
+  #navigation-friends .friends-id{width:100%}
+  #navigation-friends .friends-add-row{flex-direction:column}
+  #navigation-friends #send-friend-request{width:100%}
+  #navigation-friends .friends-toolbar{align-items:stretch;flex-direction:column}
+  #navigation-friends .friends-filters{overflow-x:auto}
+  #navigation-friends .friends-tab{flex:1;justify-content:center}
+  #navigation-friends .friends-search-field{flex:none}
+  #navigation-friends :is(#received-friend-list,#sent-friend-list) .friend-row{grid-template-columns:minmax(0,1fr)}
+  #navigation-friends :is(#received-friend-list,#sent-friend-list) .friend-controls{margin-left:56px}
+}

@@ -126,6 +126,15 @@ test('Tor settings distinguish a pending checkbox change from active protection'
  a.get('settings-button').click();await flush();assert.equal(a.get('tor-enabled').checked,false);assert.equal(a.get('tor-pending-change').hidden,true);
 });
 
+test('Friends groups contacts by presence, filters online and shows unread counts',async t=>{
+ const a=await setup(t);a.session(connected);const original=a.window.__TAURI__.core.invoke;a.window.__TAURI__.core.invoke=async(c,args)=>c==='list_friends'?[{peer:'away-one',name:'Quiet',status:'accepted',direct_room:null},{peer:'here-one',name:'Present',status:'accepted',direct_room:'other-room',presence_online:true,online:true}]:original(c,args);
+ a.get('friends-button').click();await flush();
+ assert.equal(a.get('friends-all-count').textContent,'2');assert.equal(a.get('friends-online-count').textContent,'1');assert.match(a.get('friends-own-id').textContent,/^.{1,8}$/);
+ const titles=()=>[...a.get('accepted-friend-list').querySelectorAll('.friend-group:not([hidden]) .friend-group-title')].map(n=>n.textContent);assert.deepEqual(titles(),['Online — 1','Offline — 1']);
+ a.window.document.querySelector('[data-friends-filter="online"]').click();assert.deepEqual(titles(),['Online — 1']);assert.equal(a.get('accepted-friend-list').querySelector('[data-peer="away-one"]').hidden,true);
+ assert.equal(a.get('accepted-friend-list').querySelector('.friend-unread'),null);await a.app.handleEvent({type:'message',room:'other-room',channel:'general',id:'unread-one',peer:'here-one',name:'Present',text:'hello',timestamp:Date.now(),emojis:[],mentions:[]});await flush();
+ assert.equal(a.get('accepted-friend-list').querySelector('[data-peer="here-one"] .friend-unread').textContent,'1 new');
+});
 test('Friends separates contacts from requests without losing actions or search',async t=>{
  const a=await setup(t);a.session(connected);const original=a.window.__TAURI__.core.invoke;a.window.__TAURI__.core.invoke=async(c,args)=>c==='list_friends'?[{peer:'peer',name:'Peer',status:'accepted',direct_room:'room'},{peer:'incoming',name:'Incoming person',status:'incoming'},{peer:'outgoing',name:'Outgoing person',status:'outgoing',request_delivered:false}]:original(c,args);
  a.get('friends-button').click();await flush();assert.equal(a.get('friends-all-count').textContent,'1');assert.equal(a.get('friends-requests-count').textContent,'2');assert.equal(a.get('accepted-friend-list').parentElement.hidden,false);assert.equal(a.get('received-friend-list').parentElement.hidden,true);assert.ok(a.get('accepted-friend-list').querySelector('.friend-more .danger'));
@@ -734,10 +743,10 @@ test('an account without rooms can add a contact and see the delivered outgoing 
     if(command==='send_friend_request'){a.calls.push([command,args]);list=[{peer:'bob',name:'Bob',status:'outgoing',request_delivered:true}];return {peer:'bob',status:'outgoing',delivered:true};}
     if(command==='list_friends')return list;return previous(command,args);
   };
-  a.get('friends-button').click();a.get('add-friend-button').click();assert.equal(a.get('add-friend-dialog').open,true);assert.equal(a.window.document.activeElement,a.get('friend-contact-id'));
+  a.get('friends-button').click();assert.equal(a.get('send-friend-request').disabled,true);a.get('friend-contact-id').value='   ';a.get('friend-contact-id').dispatchEvent(new a.window.Event('input'));assert.equal(a.get('send-friend-request').disabled,true);a.get('friend-contact-id').value='x';a.get('friend-contact-id').dispatchEvent(new a.window.Event('input'));assert.equal(a.get('send-friend-request').disabled,false);
   a.get('friend-contact-id').value='  ochat-contact2:public-route  ';a.get('add-friend-form').dispatchEvent(new a.window.Event('submit',{cancelable:true}));await flush();await flush();
   assert.equal(a.calls.find(([c])=>c==='send_friend_request')[1].identifier,'ochat-contact2:public-route');assert.match(a.get('sent-friend-list').textContent,/Bob.*awaiting acceptance/);
-  assert.equal(a.get('add-friend-dialog').open,false);assert.equal(a.get('friend-contact-id').value,'');assert.equal(a.calls.some(([c])=>['create_room','join_room','open_direct'].includes(c)),false);
+  assert.equal(a.get('friend-contact-id').value,'');assert.equal(a.calls.some(([c])=>['create_room','join_room','open_direct'].includes(c)),false);
 });
 
 test('received and sent requests show separate delivery states and incoming actions',async t=>{
@@ -755,8 +764,8 @@ test('received and sent requests show separate delivery states and incoming acti
 test('invalid contact IDs retain an inline error and unsent requests show their saved state',async t=>{
   const a=await setup(t);a.session(base);const previous=a.window.__TAURI__.core.invoke;
   a.window.__TAURI__.core.invoke=(command,args)=>command==='send_friend_request'?Promise.reject(Error('Paste a complete contact ID')):previous(command,args);
-  a.get('add-friend-button').click();a.get('friend-contact-id').value='bad id';a.get('add-friend-form').dispatchEvent(new a.window.Event('submit',{cancelable:true}));await flush();
-  assert.equal(a.get('add-friend-dialog').open,true);assert.match(a.get('add-friend-form').querySelector('.form-error').textContent,/complete contact ID/);assert.equal(a.get('friend-contact-id').value,'bad id');
+  a.get('friend-contact-id').value='bad id';a.get('add-friend-form').dispatchEvent(new a.window.Event('submit',{cancelable:true}));await flush();
+  assert.match(a.get('add-friend-form').querySelector('.form-error').textContent,/complete contact ID/);assert.equal(a.get('friend-contact-id').value,'bad id');
   a.window.__TAURI__.core.invoke=(command,args)=>command==='send_friend_request'?Promise.resolve({peer:'bob',status:'outgoing',delivered:false}):previous(command,args);
   a.get('friend-contact-id').value='ochat-contact2:offline';a.get('add-friend-form').dispatchEvent(new a.window.Event('submit',{cancelable:true}));await flush();await flush();assert.match(a.get('toast').textContent,/saved request will retry/);
 });
@@ -765,17 +774,9 @@ test('copying a contact ID is explicit and late contact operations cannot surviv
   const a=await setup(t);a.session(base);let resolveId,resolveRequest;const previous=a.window.__TAURI__.core.invoke;
   a.window.__TAURI__.core.invoke=(command,args)=>command==='contact_id'?new Promise(resolve=>{resolveId=resolve;}):command==='send_friend_request'?new Promise(resolve=>{resolveRequest=resolve;}):previous(command,args);
   a.get('copy-contact-id').click();await flush();resolveId('ochat-contact2:public-route');await flush();assert.equal(a.calls.find(([c])=>c==='copy_text')[1].text,'ochat-contact2:public-route');
-  a.get('copy-contact-id').click();a.get('add-friend-button').click();a.get('friend-contact-id').value='ochat-contact2:private-route';a.get('add-friend-form').dispatchEvent(new a.window.Event('submit',{cancelable:true}));await flush();
+  a.get('copy-contact-id').click();a.get('friend-contact-id').value='ochat-contact2:private-route';a.get('add-friend-form').dispatchEvent(new a.window.Event('submit',{cancelable:true}));await flush();
   await a.app.lockAccount();resolveId('ochat-contact2:late');resolveRequest({peer:'bob',status:'outgoing',delivered:true});await flush();await flush();
-  assert.equal(a.calls.filter(([c])=>c==='copy_text').length,1);assert.equal(a.get('friend-contact-id').value,'');assert.equal(a.get('add-friend-dialog').open,false);assert.equal(a.get('friend-list').textContent,'');assert.equal(a.get('copy-contact-id').disabled,true);assert.equal(a.get('copy-contact-id').textContent,'Copy my contact ID');assert.equal(a.get('auth-dialog').open,true);
-});
-
-test('a pending request does not reopen navigation after the user closes its dialog',async t=>{
-  const a=await setup(t);Object.defineProperty(a.window,'innerWidth',{value:480,configurable:true});a.session(base);let resolveRequest;const previous=a.window.__TAURI__.core.invoke;
-  a.window.__TAURI__.core.invoke=(command,args)=>command==='send_friend_request'?new Promise(resolve=>{resolveRequest=resolve;}):previous(command,args);
-  a.get('friends-button').click();a.get('add-friend-button').click();a.get('friend-contact-id').value='ochat-contact2:pending';a.get('add-friend-form').dispatchEvent(new a.window.Event('submit',{cancelable:true}));await flush();
-  a.get('add-friend-dialog').close();resolveRequest({peer:'bob',status:'outgoing',delivered:true});await flush();await flush();
-  assert.equal(a.get('navigation-dialog').open,false);assert.equal(a.get('add-friend-dialog').open,false);
+  assert.equal(a.calls.filter(([c])=>c==='copy_text').length,1);assert.equal(a.get('friend-contact-id').value,'');assert.equal(a.get('friend-list').textContent,'');assert.equal(a.get('copy-contact-id').disabled,true);assert.equal(a.get('copy-contact-id').textContent,'Copy');assert.equal(a.get('friends-own-id').textContent,'');assert.equal(a.get('send-friend-request').disabled,true);assert.equal(a.get('auth-dialog').open,true);
 });
 
 test('Studio groups messages by identity and time while retaining author context',async t=>{
@@ -921,7 +922,7 @@ test('a failed Friends refresh after Lock does not display private connection er
 test('a failed resend is not presented as successful because of an older receipt',async t=>{
   const a=await setup(t);a.session(connected);const previous=a.window.__TAURI__.core.invoke;
   a.window.__TAURI__.core.invoke=(command,args)=>command==='send_friend_request'?Promise.resolve({peer:'remote',status:'outgoing',delivered:true,request_error:'Connection timed out'}):command==='list_friends'?Promise.resolve([{peer:'remote',name:'Remote',status:'outgoing',request_delivered:true,request_error:'Connection timed out'}]):previous(command,args);
-  a.get('add-friend-button').click();a.get('friend-contact-id').value='ochat-contact2:public-contact';a.get('add-friend-form').dispatchEvent(new a.window.Event('submit',{cancelable:true}));await flush();assert.match(a.get('toast').textContent,/Contact not reachable yet/);assert.match(a.get('sent-friend-list').textContent,/Connection timed out/);
+  a.get('friend-contact-id').value='ochat-contact2:public-contact';a.get('add-friend-form').dispatchEvent(new a.window.Event('submit',{cancelable:true}));await flush();assert.match(a.get('toast').textContent,/Contact not reachable yet/);assert.match(a.get('sent-friend-list').textContent,/Connection timed out/);
 });
 
 test('voice badges show remote voice activity without joining and disappear when voice ends',async t=>{
