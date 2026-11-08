@@ -64,6 +64,15 @@ jobs:
         continue-on-error: true
       - name: Check optional compiler cache
         run: node scripts/ci/compiler-cache.cjs
+      - name: Restore Windows installer tools
+        id: windows_tools_cache
+        if: runner.os == 'Windows'
+        uses: actions/cache/restore@v5
+        continue-on-error: true
+        with:
+          path: '~\AppData\Local\tauri'
+          key: ${{ runner.os }}-${{ runner.arch }}-tauri-tools-v1-${{ hashFiles('package-lock.json') }}
+          restore-keys: ${{ runner.os }}-${{ runner.arch }}-tauri-tools-v1-
       - name: Check project and release versions
         env:
           RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
@@ -82,7 +91,22 @@ jobs:
       - name: Check core and peer-to-peer integrations
         run: cargo test -p ochat-core --locked 2>&1 | tee core-tests.log
       - name: Build desktop bundles
+        if: runner.os != 'Windows'
         run: npm run tauri -- build --bundles ${{ matrix.bundles }} ${{ matrix.arguments }} -- --locked 2>&1 | tee desktop-build.log
+      - name: Build Windows executable
+        if: runner.os == 'Windows'
+        run: npm run tauri -- build --no-bundle -- --locked 2>&1 | tee desktop-build.log
+      - name: Bundle Windows installer with download retries
+        id: windows_bundle
+        if: runner.os == 'Windows'
+        run: node scripts/ci/bundle-windows.cjs 2>&1 | tee -a desktop-build.log
+      - name: Save verified Windows installer tools
+        if: runner.os == 'Windows' && github.ref == 'refs/heads/main' && steps.windows_bundle.outcome == 'success' && steps.windows_tools_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        continue-on-error: true
+        with:
+          path: '~\AppData\Local\tauri'
+          key: ${{ runner.os }}-${{ runner.arch }}-tauri-tools-v1-${{ hashFiles('package-lock.json') }}
       - name: Show compiler cache stats
         if: ${{ !cancelled() && env.RUSTC_WRAPPER != '' }}
         continue-on-error: true

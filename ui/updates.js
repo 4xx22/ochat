@@ -1,6 +1,6 @@
 /* Metadata checks only; release downloads remain in the user's browser. */
 (() => {
-  const RELEASES = 'https://github.com/Artist6689/ochat/releases/latest';
+  const RELEASES = 'https://github.com/Apple-Lollipop/ochat/releases/latest';
   let api, checked = false, pending = null, epoch = 0;
   let status, checkButton, automatic, releaseButton, notice, noticeText;
   const node = (tag, text, className) => {

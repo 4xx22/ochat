@@ -4,8 +4,8 @@ use semver::Version;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-const API: &str = "https://api.github.com/repos/Artist6689/ochat/releases/latest";
-const RELEASES: &str = "https://github.com/Artist6689/ochat/releases/latest";
+const API: &str = "https://api.github.com/repos/Apple-Lollipop/ochat/releases/latest";
+const RELEASES: &str = "https://github.com/Apple-Lollipop/ochat/releases/latest";
 const MAX_RESPONSE: usize = 256 * 1024;
 
 #[derive(Serialize)]
