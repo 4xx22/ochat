@@ -1340,6 +1340,8 @@ async fn remove_profile_photo(state: State<'_, DesktopState>) -> Reply<()> {
 }
 
 fn main() {
+    let context = tauri::generate_context!();
+    capture_permissions::configure_dev_origin(context.config().build.dev_url.as_ref());
     let app = tauri::Builder::default()
         .on_permission_request(|webview, kind| {
             use tauri::webview::{PermissionKind, PermissionResponse};
@@ -1571,7 +1573,7 @@ fn main() {
             ];
             handler(invoke)
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("Could not start Ochat");
     shortcut_keys::start(app.handle());
     app.run(|app, event| {
