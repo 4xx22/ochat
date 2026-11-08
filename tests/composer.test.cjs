@@ -196,7 +196,7 @@ test('room roster groups presence without replacing member buttons during speaki
 });
 test('offline conversations queue messages while a missing conversation retains the draft',async t=>{
   const a=await setup(t);a.session(base);a.input('My draft');a.submit();assert.match(a.get('toast').textContent,/Choose a conversation/);assert.equal(a.calls.filter(([c])=>c==='send_text').length,0);
-  a.session({...connected,peers:[]});assert.equal(a.get('message').disabled,false);assert.equal(a.get('send-button').disabled,false);assert.match(a.get('composer-status').textContent,/outbox/);a.submit();await flush();assert.equal(a.calls.filter(([c])=>c==='send_text').length,1);assert.equal(a.get('message').value,'');
+  a.session(connected);assert.equal(a.get('composer-delivery-hint').hidden,true);a.session({...connected,peers:[]});assert.equal(a.get('message').disabled,false);assert.equal(a.get('send-button').disabled,false);assert.equal(a.get('composer-status').textContent,'');assert.equal(a.get('composer-delivery-hint').hidden,false);assert.match(a.get('composer-delivery-text').textContent,/both online/);a.submit();await flush();assert.equal(a.calls.filter(([c])=>c==='send_text').length,1);assert.equal(a.get('message').value,'');
   a.input('Another draft');a.session(connected);assert.equal(a.get('message').value,'Another draft');a.session({...connected,peers:[]});assert.equal(a.get('send-button').disabled,false);
 });
 test('empty drafts are blocked and successful sends clear the composer',async t=>{
@@ -331,6 +331,37 @@ test('unread messages are highlighted and marked read only after focused viewing
   const previous=a.window.__TAURI__.core.invoke;a.window.__TAURI__.core.invoke=async(command,args)=>{const value=await previous(command,args);return command==='mark_read'?{room:args.room,through:args.through,ids:args.ids}:value;};a.window.document.hasFocus=()=>true;a.window.dispatchEvent(new a.window.Event('focus'));await new Promise(resolve=>setTimeout(resolve,2100));assert.equal(a.get('timeline').querySelector('.unread'),null);assert.ok(a.calls.some(([c])=>c==='mark_read'));
 });
 
+test('clicking inside the open conversation marks it read at once, even without document focus',async t=>{
+  const a=await setup(t);a.session(connected);await a.app.handleEvent({type:'message',room:'room',id:'00000000-0000-4000-8000-000000000002',peer:'peer',name:'Peer',text:'Unread',timestamp:1,emojis:[]});
+  const previous=a.window.__TAURI__.core.invoke;a.window.__TAURI__.core.invoke=async(command,args)=>{const value=await previous(command,args);return command==='mark_read'?{room:args.room,through:args.through,ids:args.ids}:value;};
+  const pointer=async node=>{node.dispatchEvent(new a.window.Event('pointerdown',{bubbles:true}));await new Promise(resolve=>setTimeout(resolve,20));await flush();},marks=()=>a.calls.filter(([c])=>c==='mark_read').length;
+  a.window.document.hasFocus=()=>false;
+  await pointer(a.get('conversation-rail'));assert.equal(marks(),0);assert.ok(a.get('timeline').querySelector('.unread'));
+  Object.defineProperty(a.window.document,'visibilityState',{value:'hidden',configurable:true});await pointer(a.get('timeline'));assert.equal(marks(),0);
+  Object.defineProperty(a.window.document,'visibilityState',{value:'visible',configurable:true});a.window.dispatchEvent(new a.window.Event('blur'));
+  await pointer(a.get('timeline'));assert.equal(marks(),1);assert.equal(a.get('timeline').querySelector('.unread'),null);
+});
+
+test('a title bar indicator shows while Tor connects at startup and does not return after it is ready',async t=>{
+  const a=await setup(t);let ready=false;const previous=a.window.__TAURI__.core.invoke;a.window.__TAURI__.core.invoke=async(command,args)=>command==='network_privacy_status'?{enabled:true,ready}:previous(command,args);
+  a.session(connected);await flush();assert.equal(a.get('tor-connecting').hidden,true);
+  a.app.session(connected,{...structuredClone(settings),tor_enabled:true});await flush();assert.equal(a.get('tor-connecting').hidden,false);
+  ready=true;await new Promise(resolve=>setTimeout(resolve,2200));assert.equal(a.get('tor-connecting').hidden,true);
+  ready=false;await new Promise(resolve=>setTimeout(resolve,2200));assert.equal(a.get('tor-connecting').hidden,true);
+});
+
+test('the startup indicator waits for a contact after Tor is ready and gives up after a bounded wait',async t=>{
+  const a=await setup(t);let online=false;const previous=a.window.__TAURI__.core.invoke,friend=()=>({peer:'friend',name:'Friend',status:'accepted',direct_room:null,profile_known:true,presence_online:online});
+  a.window.__TAURI__.core.invoke=async(command,args)=>command==='network_privacy_status'?{enabled:true,ready:true}:command==='list_friends'?[friend()]:previous(command,args);
+  const poll=()=>new Promise(resolve=>setTimeout(resolve,2200)),label=()=>a.get('tor-connecting-label').textContent;
+  a.app.session(connected,{...structuredClone(settings),tor_enabled:true});await a.app.handleEvent({type:'friends_changed'});await flush();assert.equal(label(),'Connecting to Tor…');
+  await poll();assert.equal(a.get('tor-connecting').hidden,false);assert.equal(label(),'Connecting to contacts…');
+  online=true;await a.app.handleEvent({type:'friends_changed'});await flush();assert.equal(a.get('tor-connecting').hidden,true);
+  online=false;await a.app.handleEvent({type:'friends_changed'});await poll();assert.equal(a.get('tor-connecting').hidden,true);
+  a.window.OchatPersonalization.reset();a.app.session(connected,{...structuredClone(settings),tor_enabled:true});await a.app.handleEvent({type:'friends_changed'});await poll();assert.equal(a.get('tor-connecting').hidden,false);
+  const dateNow=Date.now,windowDate=a.window.Date,windowNow=windowDate.now;t.after(()=>{Date.now=dateNow;windowDate.now=windowNow;});const later=()=>dateNow()+21000;Date.now=later;windowDate.now=later;await poll();assert.equal(a.get('tor-connecting').hidden,true);
+});
+
 test('desktop notifications default to direct messages and mentions with private previews',async t=>{
   const a=await setup(t);a.session(connected);a.get('settings-button').click();await flush();assert.equal(a.get('desktop-notifications').checked,true);assert.equal(a.get('notification-previews').checked,false);assert.equal(a.get('notification-scope').value,'mentions_and_direct');a.get('notification-previews').checked=true;a.get('settings-save').click();await flush();assert.equal(a.calls.find(([c])=>c==='save_settings')[1].settings.notification_previews,true);
 });
@@ -459,7 +490,7 @@ test('private chats identify the recipient in the header, tabs, composer and pro
   assert.equal(a.get('room-title').textContent,'Peer');
   assert.equal(a.get('conversation-kind').textContent,'Private chat');
   assert.equal(a.get('message').placeholder,'Message Peer…');
-  assert.equal(a.get('composer-status').textContent,'To Peer · Private chat');
+  assert.equal(a.get('composer-status').textContent,'');
   assert.equal(a.get('conversation-tabs').querySelector('strong').textContent,'Peer');
   assert.equal(a.get('voice-button').closest('header').className,'topbar');
   a.get('conversation-identity').focus();a.get('conversation-identity').click();

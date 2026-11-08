@@ -50,14 +50,24 @@ let talkSequence=Date.now()*1000;
 const readMarkers = new Map(), selectedMentions = new Map();
 let detailsModal=false, navigationModal=true, restoreDetailsOnWide=false, detailsClosingForResize=false;
 let inspectedPeer=null, inspectedRoom=null;
-let readTimer = null, viewTimer = null, mentionOptions = [], mentionIndex = 0, mentionRange = null, historyLoading = false;
+let readTimer = null, viewTimer = null, mentionOptions = [], mentionIndex = 0, mentionRange = null, historyLoading = false, pointerAttentionUntil = 0;
 function atBottom() { const timeline=$('timeline');return timeline.scrollHeight-timeline.scrollTop-timeline.clientHeight<60; }
-function readingRoom() {return unlocked && document.body.dataset.homeOpen!=='true' && document.body.dataset.voiceView!=='true' && !!selectedRoom && !historyLoading && !hasBlockingDialog() && document.visibilityState !== 'hidden' && document.hasFocus() && atBottom();}
+function latestMessageVisible() { const timeline=$('timeline'),rows=timeline.querySelectorAll('.message[data-message-id]'),last=rows[rows.length-1];return !!last && last.getBoundingClientRect().top<timeline.getBoundingClientRect().bottom; }
+function pointerAttention() {return Date.now()<pointerAttentionUntil;}
+/* Clicking non-focusable content does not always give the webview document focus, so a recent click in the conversation counts as attention too. */
+function windowAttentive() {return document.visibilityState!=='hidden' && (document.hasFocus() || pointerAttention());}
+function readingRoom() {return unlocked && document.body.dataset.homeOpen!=='true' && document.body.dataset.voiceView!=='true' && !!selectedRoom && !historyLoading && !hasBlockingDialog() && windowAttentive() && (atBottom() || (pointerAttention() && latestMessageVisible()));}
 function reportView() {if(!tauri)return;invoke('chat_view',{room:unlocked?selectedRoom:null,channel:selectedChannel(),reading:readingRoom()}).catch(()=>{});}
-function scheduleRead() {
+function scheduleRead() {queueRead(2000);}
+function readOnPointer() {
+  pointerAttentionUntil=Date.now()+3000;
+  if(unread.has(selectedRoom) || attentionRooms.has(selectedRoom) || $('timeline').querySelector('.message.unread'))queueRead(0);
+}
+function queueRead(delay) {
   acknowledgeConversation();
   clearTimeout(viewTimer);viewTimer=setTimeout(reportView,100);
-  if(readTimer || !readingRoom())return;
+  if(!readingRoom())return;
+  if(readTimer){if(delay)return;clearTimeout(readTimer);}
   const room=selectedRoom,scope=draftKey(),channel=selectedChannel(),generation=sessionGeneration;
   readTimer=setTimeout(async()=>{
     readTimer=null;if(!readingRoom() || scope!==draftKey() || generation!==sessionGeneration)return;
@@ -65,7 +75,7 @@ function scheduleRead() {
     const through=Math.max(...rows.map(row=>Number(row.dataset.timestamp)));
     const ids=rows.filter(row=>Number(row.dataset.timestamp)===through).map(row=>row.dataset.messageId);
     try {const marker=await invoke('mark_read',{room,channel,through,ids});if(!unlocked || generation!==sessionGeneration || scope!==draftKey())return;readMarkers.set(scope,marker);rows.forEach(row=>row.classList.remove('unread'));$('timeline').querySelector('.unread-divider')?.remove();const remaining=$('timeline').querySelectorAll('.message.unread').length;if(remaining)unread.set(room,remaining);else unread.delete(room);roomsKey='';renderRooms();if(channel){const counts=await invoke('unread_counts');if(unlocked && generation===sessionGeneration && counts && typeof counts==='object'){for(const id of Object.keys(counts))unread.set(id,counts[id]);if(!counts[room])unread.delete(room);roomsKey='';renderRooms();}const view=await invoke('channel_view',{room});if(unlocked && generation===sessionGeneration && scope===draftKey() && Array.isArray(view?.channels))window.OchatChannels?.setUnread(view.unread || {},view.channels);}}catch{}
-  },2000);
+  },delay);
 }
 function isUnread(event) {if(event.peer===state?.id)return false;const marker=readMarkers.get(draftKey(event.room || selectedRoom,eventChannel(event) || selectedChannel(event.room || selectedRoom)));return !marker || event.timestamp>marker.through || (event.timestamp===marker.through && !marker.ids.includes(event.id));}
 function mentionCandidates() {const members=(state?.members || state?.peers || []);return members.map(peer=>({...peer,token:members.filter(p=>p.name===peer.name).length>1?`${peer.name}#${peer.id.slice(0,8)}`:peer.name}));}
@@ -231,6 +241,10 @@ function renderFriendUnread() {
     if(!badge){badge=el('span','friend-unread');row.querySelector('.friend-name').append(badge);}
     badge.textContent=`${count} new`;
   }
+}
+function contactPresence() {
+  const people=friends.filter(friend=>friend.status==='accepted').map(friend=>peerDetails(friend.peer,friend.direct_room,friend.name));
+  return {known:people.length,online:people.some(person=>person.online&&person.availability!=='invisible')};
 }
 function renderFriends() {
   window.OchatProductivity?.sync();
@@ -485,7 +499,7 @@ async function lockAccount() {
   $('conversation-identity').setAttribute('aria-label','View conversation details');$('room-title').removeAttribute('title');$('message').setAttribute('aria-label','Message');$('message').placeholder='Write a draft…';$('send-button').title='Send message';$('voice-button').title='Join voice';delete $('peer-voice').dataset.speaking;
   releaseTalk();$('settings-button').disabled=true;$('navigation-toggle').disabled=true;$('friends-button').disabled=true;friendRequestPending=false;$('send-friend-request').disabled=true;$('friends-own-id').textContent='';$('friends-own-id').removeAttribute('title');$('copy-contact-id').disabled=true;$('copy-contact-id').textContent='Copy';$('friends-button').textContent='Friends';$('room-voice-roster').replaceChildren();$('room-voice-elapsed').textContent='00:00';$('voice-label').textContent='Voice connected';$('voice-hint').textContent='';$('voice-elapsed').textContent='00:00';$('conversation-panel').removeAttribute('aria-labelledby');membersKey='';roomsKey='';friendsRenderKey='';lastTabSelection=null;$('private-conversation-tabs').replaceChildren();$('room-conversation-tabs').replaceChildren();$('private-tab-count').textContent='0';$('room-tab-count').textContent='0';$('details-toggle').disabled=true;$('room-actions-toggle').disabled=true;$('lock-button').disabled=true;friends=[];friendRetries.clear();friendGeneration++;$('friend-list').replaceChildren();$('talk-button').hidden=true;$('reconnect-panel').hidden=true;searchGeneration++;replyDrafts.clear();messageCache.clear();searchRoom=null;notificationRoom=null;$('search-results').replaceChildren();$('search-query').value='';$('search-status').textContent='';$('room-notifications-name').textContent='';renderReply();
   historyLoading=false;$('history-context').hidden=true;
-  clearTimeout(readTimer);clearTimeout(viewTimer);readTimer=null;readMarkers.clear();selectedMentions.clear();closeMentions();
+  clearTimeout(readTimer);clearTimeout(viewTimer);readTimer=null;pointerAttentionUntil=0;readMarkers.clear();selectedMentions.clear();closeMentions();
   window.OchatWorkspace?.reset();
   sessionGeneration++; stopTyping(); stopAudioPoll(); unlocked = false; window.OchatChannels?.reset(); window.OchatGifPicker?.reset();window.OchatPersonalization?.reset();window.OchatCommunity?.reset();emojiLoadGeneration++; historyGeneration++; selectedRoom = null; loadedRoom = null; state = null; settings = null; rooms = []; assets.clear(); assetLoads.clear(); drafts.clear(); liveOffers.clear(); shownMessages.clear();
   emojiEntries = []; editingEmoji = null; confirmCallback = null; recoveryRequired = false; roomSnapshots.clear(); archivedChannelViews.clear();archivedTextChannels.clear();roomMembers.clear(); unread.clear(); syncTaskbarUnread(); deletedRooms.clear(); assetGeneration++;
@@ -498,7 +512,7 @@ async function lockAccount() {
   document.querySelectorAll('[data-avatar-hash]').forEach(node => { delete node.dataset.avatarHash; delete node.dataset.avatarName; delete node.dataset.avatarPeer; node.querySelector('.profile-photo')?.remove(); }); $('profile-photo-preview').textContent = 'O';
   $('timeline').replaceChildren(welcomeTemplate.cloneNode(true)); bindWelcome(); $('direct-room-list').replaceChildren();$('group-room-list').replaceChildren();$('direct-count').textContent='0';$('group-count').textContent='0'; $('members').replaceChildren(); $('custom-grid').replaceChildren(); $('typing-status').textContent = ''; $('identity-value').value = ''; $('profile-name').textContent = 'Account locked'; $('profile-avatar').textContent = 'O'; $('profile-status').textContent = 'Private peer-to-peer messaging'; $('room-title').textContent = 'Ochat'; $('room-subtitle').textContent = 'Account locked'; $('voice-bar').hidden = true; $('leave-button').hidden = true; $('reconnect-button').hidden = true;
   for (const id of ['forget-room','new-room','new-direct-chat','join-button','settings-button','lock-button','invite-button','attach-button','emoji-button','send-button','message','voice-button','shared-emojis-button','clear-history','search-button','room-notifications-button']) $(id).disabled = true;
-  window.OchatOrganization?.reset();$('composer-status').textContent = 'Unlock your account to start.';window.OchatDiscord?.reset();
+  window.OchatOrganization?.reset();$('composer-status').textContent = 'Unlock your account to start.';$('composer-delivery-hint').hidden = true;$('composer-delivery-text').textContent = '';window.OchatDiscord?.reset();
   try { await invoke('lock_account'); } finally { accountExists = await invoke('account_status'); setAuthMode(accountExists ? 'unlock' : 'create'); show('auth-dialog'); }
 }
 
@@ -566,7 +580,10 @@ function renderComposer() {
   $('message').setAttribute('aria-label',context.room?`Message ${context.title}`:'Message');
   $('send-button').disabled = !connected || !$('message').value.trim() || !!$('send-button').dataset.busy;
   $('send-button').title = !selectedRoom ? 'Choose a friend or a room first' : !isActiveRoom() ? 'Queue this message until peers reconnect' : !state.peers.length ? 'Queue this message until a participant reconnects' : `Send to ${context.title}`;
-  const status = !selectedRoom ? 'Local draft · choose a friend or open a room to send.' : !isActiveRoom() || !state.peers.length ? 'Encrypted outbox · delivered when you and the recipient are online.' : !connected ? 'Choose a text channel to send.' : context.direct ? `To ${context.title} · Private chat` : `To everyone in ${context.title}`;
+  const queued = !!selectedRoom && (!isActiveRoom() || !state.peers.length), deliveryText = !queued ? '' : context.direct ? 'Delivered when you’re both online' : 'Delivered when members are online';
+  $('composer-delivery-hint').hidden = !queued;$('composer-delivery-hint').title = queued ? `Encrypted and queued. Delivered automatically once you and ${context.title} are online.` : '';
+  if ($('composer-delivery-text').textContent !== deliveryText) $('composer-delivery-text').textContent = deliveryText;
+  const status = !selectedRoom ? 'Local draft · choose a friend or open a room to send.' : queued ? '' : !connected ? 'Choose a text channel to send.' : context.direct ? '' : `To everyone in ${context.title}`;
   if ($('composer-status').textContent !== status) $('composer-status').textContent = status;
 }
 function normalizeLayout(value) {
@@ -667,7 +684,7 @@ document.addEventListener('pointerup',()=>{
 });
 document.addEventListener('pointercancel',()=>{if(pointerTabDrag)endTabDrag();});
 function conversationIsOpen(room) {
-  return unlocked && document.body.dataset.homeOpen!=='true' && document.body.dataset.voiceView!=='true' && selectedRoom===room && !historyLoading && !hasBlockingDialog() && document.visibilityState!=='hidden' && document.hasFocus();
+  return unlocked && document.body.dataset.homeOpen!=='true' && document.body.dataset.voiceView!=='true' && selectedRoom===room && !historyLoading && !hasBlockingDialog() && windowAttentive();
 }
 function acknowledgeConversation() {
   if(conversationIsOpen(selectedRoom) && attentionRooms.delete(selectedRoom))renderRooms();
@@ -1026,7 +1043,7 @@ $('delete-room').onclick = () => { const room = selectedRoom; confirm('Delete th
 $('forget-room').onclick=()=>requestForgetRoom(selectedRoom);
 $('composer').onsubmit = event => { event.preventDefault(); if (!$('message').value.trim()) return; if (!selectedRoom) { toast('Choose a conversation first. Your draft is kept.'); return; } action($('send-button'),async () => { const text = $('message').value,room=selectedRoom,channel=selectedChannel(),scope=draftKey(); const reply=replyDrafts.get(scope);const chosen=[...(chosenDraftEmojis.get(scope)?.values() || [])].filter(e=>text.includes(`:${e.name}:`));await invoke('send_text',{room,channel,text,emojis:chosen,mentions:mentionsForDraft(text),replyTo:reply?{id:reply.id,peer:reply.peer}:null});if(replyDrafts.get(scope)===reply)replyDrafts.delete(scope);renderReply(); if (draftKey()===scope && $('message').value === text) $('message').value = ''; drafts.set(scope,'');chosenDraftEmojis.delete(scope);selectedMentions.delete(scope);closeMentions(); $('message').style.height = 'auto'; stopTyping(); $('message').focus(); }); };
 $('message').addEventListener('input',onInput); $('message').addEventListener('blur',()=>{stopTyping();closeMentions();}); $('message').addEventListener('keydown',event => { if(!$('mention-picker').hidden && !event.isComposing){if(['ArrowDown','ArrowUp'].includes(event.key)){event.preventDefault();mentionIndex=(mentionIndex+(event.key==='ArrowDown'?1:-1)+mentionOptions.length)%mentionOptions.length;renderMentionPicker();return;}if(['Enter','Tab'].includes(event.key)){event.preventDefault();chooseMention(mentionIndex);return;}if(event.key==='Escape'){event.preventDefault();closeMentions();return;}} if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); $('composer').requestSubmit(); } });
-$('timeline').addEventListener('scroll',scheduleRead);window.addEventListener('focus',scheduleRead);document.addEventListener('focusin',scheduleRead);document.addEventListener('click',scheduleRead);window.addEventListener('blur',()=>{clearTimeout(readTimer);readTimer=null;reportView();});document.addEventListener('visibilitychange',()=>{reportView();scheduleRead();});
+$('timeline').addEventListener('scroll',scheduleRead);window.addEventListener('focus',scheduleRead);document.addEventListener('focusin',scheduleRead);document.addEventListener('click',scheduleRead);$('conversation-panel').addEventListener('pointerdown',readOnPointer,true);window.addEventListener('blur',()=>{pointerAttentionUntil=0;clearTimeout(readTimer);readTimer=null;reportView();});document.addEventListener('visibilitychange',()=>{reportView();scheduleRead();});
 $('cancel-reply').onclick=()=>{replyDrafts.delete(draftKey());renderReply();$('message').focus();};
 $('latest-messages').onclick=()=>action($('latest-messages'),()=>loadRoom(selectedRoom));
 $('search-button').onclick=()=>{fillSearchChannels();searchGeneration++;searchRoom=selectedRoom;$('search-results').replaceChildren();$('search-status').textContent='';$('search-query').value='';$('search-scope').value=selectedRoom?'room':'all';$('search-scope').querySelector('[value="room"]').disabled=!selectedRoom;$('search-next').hidden=$('search-previous').hidden=true;show('search-dialog');$('search-query').focus();};
@@ -1435,7 +1452,7 @@ window.OchatFeatures?.init({invoke:(command,args)=>command==='send_dropped_files
 window.OchatChannels?.init({invoke,toast,show,confirm,releaseTalk,selectText:selectTextChannel,context:()=>({unlocked,generation:sessionGeneration,room:selectedRoom,tor_enabled:!!settings?.tor_enabled,voice:activeVoice(),state:snapshotFor(selectedRoom)}),refresh:async()=>{const generation=sessionGeneration;const snapshots=await invoke('room_snapshots');if(!unlocked || generation!==sessionGeneration)return;for(const snapshot of snapshots){if(snapshot.room){roomSnapshots.set(snapshot.room.id,snapshot);if(snapshot.room.id===selectedRoom)state=snapshot;}}render();},profile:peer=>showPeer(peer.id,peer.name,selectedRoom),avatar:(node,peer)=>profileAvatar(node,peer.name,peer.avatar_hash,peer.id)});
 
 window.OchatGifPicker?.init({invoke:(command,args)=>['send_risibank_image','send_saved_image'].includes(command)?invokeImage(command,args):invoke(command,args),toast,show,context:()=>({unlocked,generation:sessionGeneration,room:selectedRoom,channel:selectedChannel(),replyTo:replyDrafts.get(draftKey()) || null})});
-window.OchatPersonalization?.init({invoke:(command,args)=>command==='send_clipboard_image'?invokeImage(command,args):invoke(command,args),toast,show,profileAvatar,insert:insertEmoji,emojis:unicodeEmojis,context:()=>({unlocked,generation:sessionGeneration,state,settings,imageToken:imageRequestToken,room:selectedRoom,channel:selectedChannel(),replyTo:replyDrafts.get(draftKey()) || null}),refresh:async()=>{const generation=sessionGeneration,next=await invoke('snapshot');if(unlocked&&generation===sessionGeneration){state=next;render();}},privateUnread:()=>allRooms().filter(r=>r.capacity===2).reduce((sum,r)=>sum+(unread.get(r.id)||0),0),commonRooms:peer=>allRooms().filter(r=>r.capacity!==2 && (snapshotFor(r.id)?.members || roomMembers.get(r.id) || []).some(m=>m.id===peer)).map(r=>r.name)});
+window.OchatPersonalization?.init({contactPresence,invoke:(command,args)=>command==='send_clipboard_image'?invokeImage(command,args):invoke(command,args),toast,show,profileAvatar,insert:insertEmoji,emojis:unicodeEmojis,context:()=>({unlocked,generation:sessionGeneration,state,settings,imageToken:imageRequestToken,room:selectedRoom,channel:selectedChannel(),replyTo:replyDrafts.get(draftKey()) || null}),refresh:async()=>{const generation=sessionGeneration,next=await invoke('snapshot');if(unlocked&&generation===sessionGeneration){state=next;render();}},privateUnread:()=>allRooms().filter(r=>r.capacity===2).reduce((sum,r)=>sum+(unread.get(r.id)||0),0),commonRooms:peer=>allRooms().filter(r=>r.capacity!==2 && (snapshotFor(r.id)?.members || roomMembers.get(r.id) || []).some(m=>m.id===peer)).map(r=>r.name)});
 
 function fillSearchChannels(){const select=$('search-channel');select.replaceChildren();const all=el('option','','All channels');all.value='';select.append(all);for(const channel of channelContextFor()?.channels || []){if(channel.kind!=='text')continue;const option=el('option','','# '+channel.name);option.value=channel.id;select.append(option);}select.disabled=select.options.length<=1;}
 function setupAudioPreferences(){

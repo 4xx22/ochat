@@ -73,7 +73,7 @@ body.discord-shell>main,.discord-shell .workspace{background:transparent}
 .discord-shell #navigation-dialog{background:color-mix(in srgb,var(--custom-panel,var(--panel)) calc(var(--window-opacity)*100%),transparent)}
 .discord-shell #sidebar-footer,.discord-shell #account-controls{background:transparent;color:var(--custom-panel-text,var(--text))}
 .discord-shell dialog:not(#navigation-dialog),
-.discord-shell #details-dialog,
+.discord-shell #details-dialog{background:var(--custom-panel,var(--panel));opacity:1;backdrop-filter:none;color:var(--custom-panel-text,var(--text))}
 .discord-shell dialog::backdrop{background:#0006;backdrop-filter:blur(4px)}
 .discord-shell .message .bubble,.discord-shell .message.own .bubble,.discord-shell .message.unread .bubble{font-size:var(--chat-font-size,15px)}
 .discord-shell .message,.discord-shell .message.own{margin-top:var(--chat-spacing,8px);margin-bottom:var(--chat-spacing,8px)}
