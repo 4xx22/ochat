@@ -342,6 +342,14 @@ test('clicking inside the open conversation marks it read at once, even without 
   await pointer(a.get('timeline'));assert.equal(marks(),1);assert.equal(a.get('timeline').querySelector('.unread'),null);
 });
 
+test('a title bar indicator shows while Tor connects at startup and does not return after it is ready',async t=>{
+  const a=await setup(t);let ready=false;const previous=a.window.__TAURI__.core.invoke;a.window.__TAURI__.core.invoke=async(command,args)=>command==='network_privacy_status'?{enabled:true,ready}:previous(command,args);
+  a.session(connected);await flush();assert.equal(a.get('tor-connecting').hidden,true);
+  a.app.session(connected,{...structuredClone(settings),tor_enabled:true});await flush();assert.equal(a.get('tor-connecting').hidden,false);
+  ready=true;await new Promise(resolve=>setTimeout(resolve,2200));assert.equal(a.get('tor-connecting').hidden,true);
+  ready=false;await new Promise(resolve=>setTimeout(resolve,2200));assert.equal(a.get('tor-connecting').hidden,true);
+});
+
 test('desktop notifications default to direct messages and mentions with private previews',async t=>{
   const a=await setup(t);a.session(connected);a.get('settings-button').click();await flush();assert.equal(a.get('desktop-notifications').checked,true);assert.equal(a.get('notification-previews').checked,false);assert.equal(a.get('notification-scope').value,'mentions_and_direct');a.get('notification-previews').checked=true;a.get('settings-save').click();await flush();assert.equal(a.calls.find(([c])=>c==='save_settings')[1].settings.notification_previews,true);
 });
